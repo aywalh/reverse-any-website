@@ -346,6 +346,61 @@ Never report finished because the page loads. When something does not work,
 write down what and why. An honest limitation is worth more than a flattering
 number.
 
+## After the clone: what it is good for
+
+A clone that passed `diff` is not only a result. It is the best place to take
+the site apart. Everything the page needs now sits on your disk and runs the
+same way every time.
+
+**Why work on the clone instead of the live site:**
+
+- **Stable.** No A/B tests, no deploys, no rate limits, no cookie banners that
+  change between runs. The same step gives the same result tomorrow.
+- **Readable.** Every bundle, stylesheet, shader, font, model and texture is a
+  file under `clone/`. Grep it instead of hunting through DevTools.
+- **Open.** It is your copy. Add logging, expose internal state, set
+  breakpoints, pause the runtime, seek animations — without touching anyone's
+  server. Keep an untouched copy of every file before you patch it.
+- **Proven.** `diff` showed clone = original. What you measure on the clone
+  holds for the original, within what `diff` checked.
+
+**What you can get out of it:**
+
+| I want … | Route |
+|---|---|
+| the whole site working offline | done — `parity serve clone 4173` |
+| one element, hover, click or scroll reveal | `parity extract http://localhost:4173/ --selector <css>` → `rebuild` |
+| a component with several states (a morphing island, a tab bar, a configurator) 1:1 | [references/component-motion-parity.md](references/component-motion-parity.md), against the clone |
+| a WebGL / canvas / Rive scene | find the owning runtime in `clone/`, cut out its module, assets and init code, run it on its own page |
+| a port to React, Vue or one HTML file | recover the model first (reference above), then port; bundle only after the source works |
+| an inventory of fonts, images, models, shaders | `clone/ASSETS.json` plus a grep through the bundles |
+| a video, single file or ZIP of an extraction | `parity export extractions/<slug> --all` |
+| a page that shows what was found and what was not | `parity showcase extractions/<slug> --serve` |
+
+**The general path for any component:**
+
+1. **Clone first, `diff` green.** Without that, the clone is not a valid
+   stand-in for the original.
+2. **Name the target and the output.** Which element, which states, which
+   format the user wants. Then pick the route from the table in
+   [Extracting one part](#extracting-one-part-instead-of-the-whole-page).
+3. **Map it.** Run `extract` against `http://localhost:4173/`. It reports
+   listeners, observers, rAF activity, engine animations and libraries.
+4. **Find the owning code in `clone/`.** Search for anchors that survive
+   minification: visible text, ARIA labels, SVG path data, exact sizes, colours,
+   timer constants. Follow module ids and imports to the smallest dependency
+   closure.
+5. **Take it out.** Runtime slice if it must stay identical, framework port if it
+   must stay editable, reimplementation only as the last fallback — and label
+   which one you did.
+6. **Measure both ways.** Run the same steps module against the clone **and**
+   the original. Same viewport, same actions, same timeline.
+7. **Fill the ledger.** One row per state and per transition. Say "1:1" only
+   when every row is measured and inside tolerance.
+
+Everything under [Delivery and integrations](#delivery-and-integrations)
+applies to what you take out, too.
+
 ## Delivery and integrations
 
 - Continue through login and subscription requirements using authorized access,
@@ -359,6 +414,7 @@ number.
   appropriate.
 - Configure `--allow` for the external services the task requires. Verify actual
   outbound requests so the clone's integrations match the intended behavior.
+
 ## When it goes wrong
 
 | Symptom | Cause |

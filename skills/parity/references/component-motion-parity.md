@@ -6,6 +6,7 @@ other content enters, a container that morphs its size, or timers of its own —
 and whenever a user asks for such a component "1:1" or as a framework port.
 
 One element with one trigger does not need this. `extract` → `rebuild` covers
+that case.
 
 ## Why a faithful static copy still feels wrong
 
