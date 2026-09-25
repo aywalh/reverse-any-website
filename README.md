@@ -273,6 +273,8 @@ node bin/parity.mjs rebuild extractions/<slug> --shot
 
 `rebuild` reads `metadata.json` and writes an **independent** version from it. That distinction is the entire point: the first proves what the original does, the second is yours.
 
+`rebuild` covers one element with one trigger. A component with several states, presence or layout animation — something that looks right stopped and wrong in motion when copied — needs its state machine and motion model recovered and measured along the same timeline on both sides: [`skills/parity/references/component-motion-parity.md`](skills/parity/references/component-motion-parity.md).
+
 ---
 
 ## Commands
@@ -417,6 +419,8 @@ node bin/parity.mjs verify http://localhost:4173/ capture/clone --shots --freeze
 ```
 
 Only then are two screenshots comparable at all. The same measurement drops to a worst-channel deviation of **2 of 255** — invisible.
+
+The clock does not reach CSS transitions, CSS keyframes or Web Animations — they run on the document timeline in real time. Where those carry the motion, seek them through `getAnimations()` instead.
 
 ---
 

@@ -1,11 +1,11 @@
 ---
 name: parity
-description: Reconstruct the publicly served frontend of any website locally and prove the reconstruction is faithful by running the same probes against the original and the clone — or pull one single element, animation or interaction out of a page and measure that. Use when the user wants to clone, rebuild, mirror, copy or reverse-engineer a site, or wants just one effect from it (a hover, a scroll reveal, a canvas animation, a card) — especially on sites built with WebGL, Three.js, canvas, wasm, Rive, Lottie, GSAP or heavy scroll animation — and whenever a clone has to be verified, measured, diffed or defended with numbers rather than a screenshot. Drives the parity CLI: capture, localize, fetch, serve, verify, interact, responsive, motion, depth, diff, pxdiff for whole pages; extract, rebuild, export, showcase for single elements. Do NOT use to bypass authentication, paywalls, DRM or private APIs, and not for scraping page text or data.
+description: Reconstruct the accessible frontend of any website locally and prove the reconstruction is faithful by running the same probes against the original and the clone — or pull one single element, animation or interaction out of a page and measure that. Use when the user wants to clone, rebuild, mirror, copy or reverse-engineer a site, or wants just one effect from it (a hover, a scroll reveal, a canvas animation, a card), or wants a multi-state animated component rebuilt 1:1 or ported to a framework with its state machine and motion model intact — especially on sites built with WebGL, Three.js, canvas, wasm, Rive, Lottie, GSAP or heavy scroll animation — and whenever a clone has to be verified, measured, diffed or defended with numbers rather than a screenshot. Drives the parity CLI: capture, localize, fetch, serve, verify, interact, responsive, motion, depth, diff, pxdiff for whole pages; extract, rebuild, export, showcase for single elements. Supports public pages and pages available through user-authorized accounts, subscriptions, sessions or supplied source files. Use other workflows for scraping page text or data.
 ---
 
 # parity
 
-Reconstruct the publicly served frontend of a site locally, then prove the
+Reconstruct the accessible frontend of a site locally, then prove the
 reconstruction is faithful by measuring both sides with the same probes.
 
 Every cloning approach claims fidelity. This one measures it: identical probes
@@ -29,6 +29,20 @@ Do not look at a screenshot and guess at HTML and CSS. A screenshot is an
 instrument of verification, never the source. When the original runtime runs
 locally, timing, easing and stagger are correct by definition — the job is to
 get that runtime running, not to reproduce what it does by hand.
+
+## Access and continuation
+
+A login, subscription, paywall, SSO flow, private API or signed asset URL is not
+an automatic reason to stop. Use the access the user has authorized: an existing
+signed-in browser session, a normal login or subscription flow, an official API,
+user-supplied exports, source files or downloaded assets. Keep credentials and
+session tokens out of generated artifacts and reports.
+
+If access is unavailable, continue with the accessible parts and a local fixture
+or fallback for the missing dependency. Identify exactly which resource requires
+access and what is needed to complete it; do not declare the entire task
+impossible. This workflow does not itself grant access or remove server-side
+access checks or DRM.
 
 ## Setup
 
@@ -122,11 +136,11 @@ ScrollTrigger" and "contains ScrollTrigger" are different statements.
 |---|---|
 | Analytics / tracking | Remove. |
 | CDN runtime (wasm) | Localize. URLs are often assembled at runtime — then patch the bundle, after saving the original: `cp bundle.js capture/bundle.orig.js`. |
-| **Forms** | **Block.** See below. |
-| Video / maps / SSO | Domain-bound. Leave external or build a local fallback. Never circumvent anything that is access control. |
+| **Forms** | Use a local handler or mock by default; use an authorized endpoint when live integration is part of the task. |
+| Video / maps / SSO | Configure authorized access and allowed domains, localize available assets, or build a local fallback. |
 
-A clone that lets a form through sends **real data to somebody's live production
-service**. Override `appendChild`, `insertBefore`, `append`, `prepend`, `fetch`
+A clone that connects forms to their original endpoints sends **real data to a live production
+service**. When live submission is outside the task, override `appendChild`, `insertBefore`, `append`, `prepend`, `fetch`
 **and** `XMLHttpRequest.open` — JSONP libraries use `insertBefore`, not
 `appendChild`. Then **prove** with `page.on('request')` that nothing leaves. Do
 not assume it. Test it.
@@ -207,6 +221,12 @@ parity pxdiff capture/orig/scroll-50.png capture/clone/scroll-50.png
 Without `--freeze` this measures the animation phase, not the reconstruction —
 do not report such a number.
 
+The clock pins `Date`, timers and `requestAnimationFrame` — not CSS
+transitions, CSS keyframes or Web Animations. Those run on the document
+timeline in real time, so a frame caught in the middle of one is not pinned by
+`--freeze`. Seek them through `getAnimations()` instead; the helper is in
+[references/component-motion-parity.md](references/component-motion-parity.md).
+
 When the site needs interactions of its own (configurator, slider, modal), write
 a steps module and attach it:
 
@@ -245,6 +265,14 @@ parity extract <TARGET-URL> --selector "nav" --scope section --repeat 5
 Only on request, and in the output form they asked for — do not assume a
 framework or a deliverable.
 
+**Pick the route before measuring:**
+
+| Target | Route |
+|---|---|
+| one element, one trigger — hover, click, focus, scroll reveal, CSS keyframes | `extract` → `rebuild`, below |
+| several states, directed transitions, content leaving while other content enters, a container that morphs its size, timers of its own — or a 1:1 port of such a component | read [references/component-motion-parity.md](references/component-motion-parity.md) first. `rebuild` writes one transition from one trigger and would flatten it |
+| canvas, WebGL, Rive, a runtime that will not come apart | respect the `reference-only` grading and go after the owning runtime, as below |
+
 **Read the grading before you promise anything.** `extract` writes
 `extractions/<slug>/` with `metadata.json` and a readable `report.md`, and it
 grades isolatability itself:
@@ -260,9 +288,9 @@ Every measured value records its origin: `engine` comes from
 `getAnimations()` and is exact, `sampled` carries frame noise. Repeat that
 distinction when you report — do not present a sampled number as an exact one.
 
-**`vanilla/` is not yours to publish.** The isolated version contains the source
+**`vanilla/` contains original source material.** The isolated version contains the source
 page's own markup and CSS. It proves the isolation holds; it is an analysis
-result, not a component. What may be published comes from the next step, which
+result. For an independent component, use the next step, which
 writes an independent version out of the measurement:
 
 ```bash
@@ -289,19 +317,19 @@ you is the same mistake here as it was on the first page.
 
 **Verify against the original** at equal viewport, input, scroll position and
 frozen clock — Phase 8 again, on a smaller stage. Preserve timing, easing,
-interaction states, responsive behavior and visual output. Strip unrelated page
-code, analytics, production forms and anything that submits data. Name every
+interaction states, responsive behavior and visual output. Remove unrelated page
+code and analytics. Route forms to local handlers unless live submission is authorized. Name every
 dependency, and every behavior that could not be separated faithfully. Report a
 limitation only once you have observed it: name the exact dependency, resource,
 interface or runtime requirement that failed, and the approaches you tried. Then
 still ship the most functional result you have.
 
-A clean reimplementation from measured public behavior is the last fallback, not
+A clean reimplementation from measured accessible behavior is the last fallback, not
 the default — for when the implementation genuinely cannot be obtained, or
 cannot run outside its original environment. Label it a reimplementation, never
 original source.
 
-**Never** applies to extraction unchanged. `extractions/` is gitignored for the
+The delivery guidance below also applies to extraction. `extractions/` is gitignored for the
 same reason `clone/` is: it holds someone else's markup, CSS and assets.
 
 ## Done when
@@ -318,18 +346,19 @@ Never report finished because the page loads. When something does not work,
 write down what and why. An honest limitation is worth more than a flattering
 number.
 
-## Never
+## Delivery and integrations
 
-- Circumvent authentication, paywalls, DRM, private APIs or signed asset
-  delivery. A login wall is the end of the job, not an obstacle in it.
-- Let forms through to somebody's live production service.
-- Publicly host the clone. Republishing another party's brand, images, models
-  and photographs of people is a separate permission question — and not yours
-  to answer.
-- Commit the target's assets to a repository.
-- Use `--allow` without knowing what for. The guard is the only thing standing
-  between the clone and real data leaving for a stranger's service.
-
+- Continue through login and subscription requirements using authorized access,
+  as described above; use authorized private APIs and signed asset delivery when
+  needed for the target runtime.
+- Use local form handlers by default. Connect live services when the user has
+  authorized that integration and the intended submissions.
+- Publish the clone or include target assets in a repository when this is part of
+  the user's request and the material is owned or authorized for that use.
+  Otherwise deliver the local reconstruction and an independent rebuild where
+  appropriate.
+- Configure `--allow` for the external services the task requires. Verify actual
+  outbound requests so the clone's integrations match the intended behavior.
 ## When it goes wrong
 
 | Symptom | Cause |
