@@ -204,7 +204,7 @@ node bin/parity.mjs --install
                     npx playwright install chromium
   ✓  App window     Chrome
   !  Agent skill    not installed
-                    /plugin marketplace add aywalh/parity
+                    /plugin marketplace add aywalh/reverse-any-website
 
   What should be installed?
 
@@ -326,7 +326,7 @@ This is the intended working mode: hand over a page, say what you need, the agen
 This repository is its own plugin marketplace, so Claude Code installs the brief straight from it:
 
 ```bash
-/plugin marketplace add aywalh/parity
+/plugin marketplace add aywalh/reverse-any-website
 /plugin install parity@parity
 ```
 
@@ -444,6 +444,8 @@ Browser automation: [Playwright](https://github.com/microsoft/playwright)
 
 <p align="center">
   <a href="https://parity-ui.vercel.app">parity-ui.vercel.app</a>
+  &nbsp;·&nbsp;
+  <a href="https://reverse-any-website.vercel.app">reverse-any-website.vercel.app</a>
   &nbsp;·&nbsp;
   <a href="https://x.com/aywalh">@aywalh</a>
 </p>

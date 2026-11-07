@@ -11,7 +11,7 @@ cp PROMPT.md AGENTS.md
 Claude Code braucht das nicht mehr — dort gibt es dieselbe Anleitung als installierbaren Skill, auf Englisch und ohne Kopieren:
 
 ```bash
-/plugin marketplace add aywalh/parity
+/plugin marketplace add aywalh/reverse-any-website
 /plugin install parity@parity
 ```
 

@@ -100,7 +100,7 @@ const checkEnvironment = async () => {
 
   const skill = skillInstalled();
   rows.push({ ok: skill, soft: true, label: 'Agenten-Skill', value: skill ? 'installiert' : 'nicht installiert',
-              hint: skill ? '' : '/plugin marketplace add aywalh/parity' });
+              hint: skill ? '' : '/plugin marketplace add aywalh/reverse-any-website' });
 
   return rows;
 };

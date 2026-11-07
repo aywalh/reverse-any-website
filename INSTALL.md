@@ -1,6 +1,6 @@
 Install parity on this machine, then stop.
 
-Repository: https://github.com/aywalh/parity
+Repository: https://github.com/aywalh/reverse-any-website
 
 The tool and the skill belong together: `bin/parity.mjs` does the work, and
 `skills/parity/SKILL.md` is what tells an agent how to drive it. Install both.
@@ -15,7 +15,7 @@ The tool and the skill belong together: `bin/parity.mjs` does the work, and
    `parity`:
    - If you support Claude Code plugins:
 
-         /plugin marketplace add aywalh/parity
+         /plugin marketplace add aywalh/reverse-any-website
          /plugin install parity@parity
 
    - Otherwise register `skills/parity/SKILL.md` from the clone wherever your

@@ -12,7 +12,7 @@
       "description": "Reconstruct the publicly served frontend of a website locally and prove fidelity by running identical probes against original and clone.",
       "version": "1.0.0",
       "author": { "name": "aywalh" },
-      "homepage": "https://github.com/aywalh/parity",
+      "homepage": "https://github.com/aywalh/reverse-any-website",
       "license": "MIT",
       "keywords": ["website-clone", "verification", "playwright", "webgl"],
       "category": "development"
