@@ -1,17 +1,16 @@
-// Showcase — eine lesbare Seite aus einer Extraktion.
+// Showcase — a readable page built from an extraction.
 //
 // Usage: node tools/showcase.mjs <extraction-dir> [--serve [port]]
 //
-// Der Results-Bereich der Oberflaeche ist zum Arbeiten. Das hier ist zum
-// Zeigen: eine Seite, die aus metadata.json und dem, was im Verzeichnis liegt,
-// zusammenbaut, was gefunden wurde — Video, Aufnahmen, 3D-Modelle, Toene,
-// Messwerte, Code.
+// The interface's results area is for working. This one is for showing: a
+// page assembled from metadata.json and whatever is in the directory, showing
+// what was found — video, captures, 3D models, sounds, measurements, code.
 //
-// Sie sagt auch, was NICHT drin ist. Eine Showcase-Seite, die eine
-// reference-only-Extraktion wie ein fertiges Bauteil praesentiert, waere die
-// eine Luege, die dieses ganze Werkzeug vermeiden soll.
+// It also says what is NOT in there. A showcase page presenting a
+// reference-only extraction like a finished component would be the one lie
+// this whole tool is meant to avoid.
 //
-// Braucht einen Server (Module und Import-Map): --serve startet ihn gleich mit.
+// Needs a server (modules and import map): --serve starts one right away.
 import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { join, extname, basename } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -24,27 +23,26 @@ const argv = process.argv.slice(2);
 const DIR = argv[0];
 if (!DIR) { console.error('usage: node tools/showcase.mjs <extraction-dir> [--serve [port]]'); process.exit(2); }
 const metaPath = join(DIR, 'metadata.json');
-if (!existsSync(metaPath)) { console.error(`✗ ${metaPath} nicht gefunden`); process.exit(1); }
+if (!existsSync(metaPath)) { console.error(`✗ ${metaPath} not found`); process.exit(1); }
 const m = JSON.parse(readFileSync(metaPath, 'utf8'));
 
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const kb = n => n < 1024 * 1024 ? Math.round(n / 1024) + ' KB' : (Math.round(n / 1024 / 102.4) / 10) + ' MB';
 const has = f => f && existsSync(join(DIR, f));
 
-// ── Was liegt im Verzeichnis ────────────────────────────────────────────────
+// ── What is in the directory ────────────────────────────────────────────────
 const assetDir = join(DIR, 'assets');
 const assets = existsSync(assetDir)
   ? readdirSync(assetDir).map(f => ({ f, ext: extname(f).slice(1).toLowerCase(), size: statSync(join(assetDir, f)).size }))
   : [];
-// Alphabetisch, nicht nach Groesse: die Reihenfolge soll vorhersehbar sein,
-// und der Betrachter startet mit dem ersten Eintrag. Nach Groesse zu sortieren
-// laedt zuerst irgendein Beiwerk.
+// Alphabetical, not by size: the order should be predictable, and the viewer
+// starts with the first entry. Sorting by size loads some side piece first.
 const models = assets.filter(a => a.ext === 'glb' || a.ext === 'gltf').sort((a, b) => a.f.localeCompare(b.f));
 const sounds = assets.filter(a => ['mp3', 'ogg', 'wav', 'm4a'].includes(a.ext)).sort((a, b) => a.f.localeCompare(b.f));
 const other = assets.filter(a => !models.includes(a) && !sounds.includes(a));
 
-// Welche Modelle sich ohne Zusatzdecoder laden lassen — das entscheidet, was
-// der Betrachter wirklich anzeigen kann.
+// Which models load without extra decoders — that decides what the viewer
+// can actually show.
 for (const mo of models) {
   try {
     const b = readFileSync(join(assetDir, mo.f));
@@ -57,38 +55,38 @@ for (const mo of models) {
 }
 
 const ISO = {
-  isolatable: ['isolierbar', 'ok'],
-  partial: ['teilweise isolierbar', 'limit'],
-  'reference-only': ['nur als Referenz dokumentierbar', 'limit'],
-  'not-analysable': ['nicht analysierbar', 'bad'],
+  isolatable: ['isolatable', 'ok'],
+  partial: ['partially isolatable', 'limit'],
+  'reference-only': ['documentable as reference only', 'limit'],
+  'not-analysable': ['not analysable', 'bad'],
 };
 const [isoText, isoCls] = ISO[m.isolatability] || [m.isolatability, ''];
 
-// ── Was drin ist, was nicht ─────────────────────────────────────────────────
-// Die ehrliche Bilanz. Sie steht oben, nicht im Kleingedruckten.
+// ── What is in it, what is not ──────────────────────────────────────────────
+// The honest balance. It sits at the top, not in the small print.
 const gotIt = [], missing = [];
-if (has(m.previews?.video)) gotIt.push('Aufnahme in Bewegung' + (m.previews.videoShows === 'original' ? ' (von der Originalseite)' : ''));
-if (has(m.previews?.original)) gotIt.push('Aufnahmen des Originals');
-if (models.length) gotIt.push(models.length + ' 3D-Modell' + (models.length > 1 ? 'e' : ''));
-if (sounds.length) gotIt.push(sounds.length + ' Tondatei' + (sounds.length > 1 ? 'en' : ''));
-gotIt.push('vollstaendige Messung als JSON');
-if (m.code?.rebuilt) gotIt.push('eigenstaendiger Nachbau (HTML/CSS/JS, React, Svelte)');
-else gotIt.push('isolierte Fassung mit Original-Code (Analyseergebnis)');
+if (has(m.previews?.video)) gotIt.push('recording in motion' + (m.previews.videoShows === 'original' ? ' (of the original page)' : ''));
+if (has(m.previews?.original)) gotIt.push('captures of the original');
+if (models.length) gotIt.push(models.length + ' 3D model' + (models.length > 1 ? 's' : ''));
+if (sounds.length) gotIt.push(sounds.length + ' sound file' + (sounds.length > 1 ? 's' : ''));
+gotIt.push('complete measurement as JSON');
+if (m.code?.rebuilt) gotIt.push('independent rebuild (HTML/CSS/JS, React, Svelte)');
+else gotIt.push('isolated version with original code (analysis result)');
 
 if (!m.code?.rebuilt) {
-  missing.push('Kein eigenstaendiger Nachbau — ' + (m.isolatabilityReasons?.[0] || 'das Ziel ist nicht isolierbar.'));
+  missing.push('No independent rebuild — ' + (m.isolatabilityReasons?.[0] || 'the target is not isolatable.'));
 }
 if (m.techniques?.includes('webgl') || m.techniques?.includes('canvas')) {
-  missing.push('Keine Spiellogik, Physik oder Shader. Was auf dem Canvas passiert, steht in gebuendeltem JavaScript der Quellseite, nicht in CSS.');
+  missing.push('No game logic, physics or shaders. What happens on the canvas lives in the source page\'s bundled JavaScript, not in CSS.');
 }
-if (models.some(x => x.draco || x.basis)) missing.push('Die Modelle sind Draco-komprimiert und nutzen KTX2-Texturen. Der Betrachter unten dekodiert beides; ausserhalb davon braucht es dieselben Decoder.');
-if (m.assets?.length) missing.push('Schriften und Bilder der Quellseite sind nicht mitkopiert, nur verlinkt.');
+if (models.some(x => x.draco || x.basis)) missing.push('The models are Draco-compressed and use KTX2 textures. The viewer below decodes both; outside of it the same decoders are needed.');
+if (m.assets?.length) missing.push('The source page\'s fonts and images are not copied along, only linked.');
 
 const card = (label, value, cls = '') => value == null || value === '' ? '' :
   `<div class="kv"><b>${esc(label)}</b><span class="${cls}">${value}</span></div>`;
 
 const page = `<!doctype html>
-<html lang="de">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <title>${esc(m.title)} — parity showcase</title>
@@ -189,11 +187,11 @@ footer{border-top:1px solid var(--line);padding-top:18px;color:var(--muted);font
     <rect x="8" y="8" width="22" height="48"/><rect x="34" y="8" width="22" height="48"/>
   </svg>
   <span class="name">parity</span>
-  <span class="sub">Selective Extraction · ${esc(new Date(m.createdAt).toLocaleDateString('de-DE'))}</span>
+  <span class="sub">Selective Extraction · ${esc(new Date(m.createdAt).toLocaleDateString('en-US'))}</span>
 </header>
 
 <h1>${esc(m.title)}</h1>
-<div class="src">Gemessen aus <a href="${esc(m.source)}" target="_blank" rel="noreferrer noopener">${esc(m.source)}</a> · <code>${esc(m.selector)}</code></div>
+<div class="src">Measured from <a href="${esc(m.source)}" target="_blank" rel="noreferrer noopener">${esc(m.source)}</a> · <code>${esc(m.selector)}</code></div>
 
 <div class="badges">
   <span class="badge">${esc(m.category)}</span>
@@ -204,28 +202,28 @@ footer{border-top:1px solid var(--line);padding-top:18px;color:var(--muted);font
 </div>
 
 <section>
-  <h2>Bilanz</h2>
+  <h2>Balance</h2>
   <div class="balance">
-    <div class="yes"><h3>Was hier ist</h3><ul>${gotIt.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>
-    <div class="no"><h3>Was nicht</h3><ul>${missing.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>
+    <div class="yes"><h3>What is here</h3><ul>${gotIt.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>
+    <div class="no"><h3>What is not</h3><ul>${missing.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>
   </div>
 </section>
 
 ${has(m.previews?.video) ? `<section>
-  <h2>In Bewegung${m.previews.videoShows === 'original' ? ' — Aufnahme der Originalseite' : ''}</h2>
+  <h2>In motion${m.previews.videoShows === 'original' ? ' — recording of the original page' : ''}</h2>
   <video src="${esc(m.previews.video)}" controls loop muted playsinline></video>
   ${m.previews.videoShows === 'original'
-    ? '<p class="warn">Aufgenommen von der laufenden Originalseite. Eine isolierte Fassung waere hier ein leeres Rechteck — der Inhalt entsteht erst zur Laufzeit im Canvas.</p>'
+    ? '<p class="warn">Recorded from the running original page. An isolated version would be an empty rectangle here — the content only comes into being at runtime in the canvas.</p>'
     : ''}
 </section>` : ''}
 
 ${[m.previews?.original, m.previews?.originalAfter, m.previews?.isolated, m.previews?.rebuilt].some(has) ? `<section>
-  <h2>Aufnahmen</h2>
+  <h2>Captures</h2>
   <div class="shots">
-    ${[[m.previews?.original, 'Original, vor dem Trigger'],
-       [m.previews?.originalAfter, 'Original, nach dem Trigger'],
-       [m.previews?.isolated, 'Isoliert — Original-Code, auf das Ziel reduziert'],
-       [m.previews?.rebuilt, 'Nachbau — aus der Messung geschrieben']]
+    ${[[m.previews?.original, 'Original, before the trigger'],
+       [m.previews?.originalAfter, 'Original, after the trigger'],
+       [m.previews?.isolated, 'Isolated — original code, reduced to the target'],
+       [m.previews?.rebuilt, 'Rebuild — written from the measurement']]
       .filter(([f]) => has(f))
       .map(([f, cap]) => `<figure class="shot"><img src="${esc(f)}" alt="${esc(cap)}" loading="lazy"><figcaption>${esc(cap)}</figcaption></figure>`)
       .join('')}
@@ -233,14 +231,14 @@ ${[m.previews?.original, m.previews?.originalAfter, m.previews?.isolated, m.prev
 </section>` : ''}
 
 ${models.length ? `<section>
-  <h2>3D-Modelle <span style="float:right;text-transform:none;letter-spacing:0">${models.length} Dateien · ${kb(models.reduce((a, b) => a + b.size, 0))}</span></h2>
+  <h2>3D models <span style="float:right;text-transform:none;letter-spacing:0">${models.length} files · ${kb(models.reduce((a, b) => a + b.size, 0))}</span></h2>
   <div class="models">
     ${models.map((x, i) => `<button data-src="assets/${esc(x.f)}" data-draco="${x.draco ? 1 : 0}" aria-pressed="${i === 0}">${esc(x.f.replace(/-\w{8}\.glb$/, ''))}<span class="n">${x.meshes}</span></button>`).join('')}
   </div>
-  <div id="viewer"><div id="vmsg">Betrachter wird geladen…</div></div>
-  <p class="warn">Ziehen zum Drehen, Rad zum Zoomen. Draco-Geometrie und KTX2-Texturen werden im Browser dekodiert; Modelle ohne Textur bekommen ein neutrales Material, damit die Form sichtbar bleibt.</p>
+  <div id="viewer"><div id="vmsg">Loading viewer…</div></div>
+  <p class="warn">Drag to rotate, wheel to zoom. Draco geometry and KTX2 textures are decoded in the browser; models without a texture get a neutral material so the shape stays visible.</p>
   <table>
-    <thead><tr><th>Datei</th><th>Meshes</th><th>Erweiterungen</th><th class="num">Groesse</th></tr></thead>
+    <thead><tr><th>File</th><th>Meshes</th><th>Extensions</th><th class="num">Size</th></tr></thead>
     <tbody>${models.map(x => `<tr>
       <td><a href="assets/${esc(x.f)}" download style="color:inherit">${esc(x.f)}</a></td>
       <td>${x.meshes}</td>
@@ -250,7 +248,7 @@ ${models.length ? `<section>
 </section>` : ''}
 
 ${sounds.length ? `<section>
-  <h2>Toene <span style="float:right;text-transform:none;letter-spacing:0">${sounds.length} Dateien</span></h2>
+  <h2>Sounds <span style="float:right;text-transform:none;letter-spacing:0">${sounds.length} files</span></h2>
   <div class="sounds">
     ${sounds.map(x => `<div class="snd">
       <div class="nm">${esc(x.f.replace(/-\w{8}\.\w+$/, ''))} <span style="color:var(--muted)">${kb(x.size)}</span></div>
@@ -260,50 +258,50 @@ ${sounds.length ? `<section>
 </section>` : ''}
 
 <section>
-  <h2>Messung</h2>
-  ${card('DOM-Pfad', `<code style="font-size:11px;color:var(--muted);word-break:break-all">${esc(m.domPath)}</code>`)}
+  <h2>Measurement</h2>
+  ${card('DOM path', `<code style="font-size:11px;color:var(--muted);word-break:break-all">${esc(m.domPath)}</code>`)}
   ${card('Trigger', esc((m.triggers || []).join(', ')))}
-  ${card('Technik', esc((m.techniques || []).join(', ') || '—'))}
-  ${card('Libraries', esc((m.dependencies?.libraries || []).join(', ') || 'keine ueber window erkannt'))}
-  ${card('Dauer', m.timing?.durationMs != null
+  ${card('Technique', esc((m.techniques || []).join(', ') || '—'))}
+  ${card('Libraries', esc((m.dependencies?.libraries || []).join(', ') || 'none detected on window'))}
+  ${card('Duration', m.timing?.durationMs != null
       ? `${m.timing.durationMs}ms <span style="color:var(--muted)">(${esc(m.timing.durationSource)})</span>`
-      : '<span style="color:var(--muted)">keine Dauer messbar</span>')}
+      : '<span style="color:var(--muted)">no measurable duration</span>')}
   ${card('Easing', esc((m.easing || []).join(' · ') || '—'))}
-  ${card('Bewegte Eigenschaften', esc((m.properties || []).join(', ') || 'keine gemessen'))}
-  ${card('rAF-Aufrufe', m.dependencies?.rafCalls ?? null)}
-  ${card('Globale Events', `<span style="color:var(--muted);font-size:11px">${esc((m.dependencies?.globalEvents || []).slice(0, 14).join(', ') || '—')}</span>`)}
+  ${card('Animated properties', esc((m.properties || []).join(', ') || 'none measured'))}
+  ${card('rAF calls', m.dependencies?.rafCalls ?? null)}
+  ${card('Global events', `<span style="color:var(--muted);font-size:11px">${esc((m.dependencies?.globalEvents || []).slice(0, 14).join(', ') || '—')}</span>`)}
   ${card('Reduced Motion', m.reducedMotion?.probed
-      ? (m.reducedMotion.respected === null ? 'kein Motion deklariert'
-        : m.reducedMotion.respected ? '✓ die Quellseite reagiert darauf'
-        : '✗ die Quellseite ignoriert die Einstellung')
-      : 'nicht gemessen',
+      ? (m.reducedMotion.respected === null ? 'no motion declared'
+        : m.reducedMotion.respected ? '✓ the source page responds to it'
+        : '✗ the source page ignores the setting')
+      : 'not measured',
       m.reducedMotion?.respected === false ? 'bad' : m.reducedMotion?.respected ? 'ok' : '')}
-  ${card('Isolierbarkeit', esc(isoText), isoCls)}
+  ${card('Isolatability', esc(isoText), isoCls)}
   ${card('Status', esc(m.status))}
 </section>
 
 ${(m.warnings || []).length ? `<section>
-  <h2>Hinweise</h2>
+  <h2>Notes</h2>
   <div class="warn">${m.warnings.map(w => '· ' + esc(w)).join('<br>')}</div>
 </section>` : ''}
 
 <section>
-  <h2>Herunterladen</h2>
+  <h2>Download</h2>
   <div class="dl">
-    ${[[m.code?.zip, 'Alles als ZIP'], [m.previews?.video, 'Video'], [m.code?.single, 'Einzeldatei'],
-       ['metadata.json', 'Messung (JSON)'], ['report.md', 'Bericht'],
-       [m.code?.rebuilt, 'Nachbau'], [m.code?.react, 'React'], [m.code?.svelte, 'Svelte'],
-       ['NOT-REBUILT.md', 'Warum kein Nachbau']]
+    ${[[m.code?.zip, 'Everything as ZIP'], [m.previews?.video, 'Video'], [m.code?.single, 'Single file'],
+       ['metadata.json', 'Measurement (JSON)'], ['report.md', 'Report'],
+       [m.code?.rebuilt, 'Rebuild'], [m.code?.react, 'React'], [m.code?.svelte, 'Svelte'],
+       ['NOT-REBUILT.md', 'Why no rebuild']]
       .filter(([f]) => has(f))
       .map(([f, label]) => `<a href="${esc(f)}" download>${esc(label)}</a>`).join('')}
   </div>
 </section>
 
 <footer>
-  Erzeugt von <b>parity</b> · Selective Extraction.
-  Alle Assets und Aufnahmen stammen von <a href="${esc(m.source)}" style="color:var(--muted)">${esc(new URL(m.source).host)}</a>
-  und gehoeren deren Urhebern. Diese Seite ist eine Analyse, keine Veroeffentlichung —
-  nicht oeffentlich hosten.
+  Generated by <b>parity</b> · Selective Extraction.
+  All assets and captures come from <a href="${esc(m.source)}" style="color:var(--muted)">${esc(new URL(m.source).host)}</a>
+  and belong to their authors. This page is an analysis, not a publication —
+  do not host it publicly.
 </footer>
 
 </div>
@@ -315,9 +313,9 @@ ${models.length ? `<script type="importmap">
 }}
 </script>
 <script type="module">
-// Betrachter fuer die Modelle. Faellt er aus — kein Netz, CDN nicht erreichbar —,
-// bleiben Tabelle und Download stehen. Eine Seite, die ohne ihn nutzlos waere,
-// haette den Betrachter nicht verdient.
+// Viewer for the models. If it fails — no network, CDN unreachable — the
+// table and downloads stay. A page that would be useless without it would
+// not have deserved the viewer.
 const msg = document.getElementById('vmsg');
 let THREE, OrbitControls, GLTFLoader, DRACOLoader, KTX2Loader;
 try {
@@ -327,7 +325,7 @@ try {
   ({ DRACOLoader } = await import('three/addons/loaders/DRACOLoader.js'));
   ({ KTX2Loader } = await import('three/addons/loaders/KTX2Loader.js'));
 } catch (e) {
-  msg.textContent = 'Der 3D-Betrachter braucht eine Internetverbindung (three.js vom CDN). Die Modelle unten lassen sich trotzdem herunterladen.';
+  msg.textContent = 'The 3D viewer needs an internet connection (three.js from the CDN). The models below can still be downloaded.';
   throw e;
 }
 
@@ -346,9 +344,9 @@ scene.add(new THREE.HemisphereLight(0xffffff, 0x333344, 2.2));
 const key = new THREE.DirectionalLight(0xffffff, 2.0); key.position.set(3, 5, 4); scene.add(key);
 const rim = new THREE.DirectionalLight(0xffffff, 0.8); rim.position.set(-4, 2, -3); scene.add(rim);
 
-// Beide Decoder sind Pflicht, nicht Kuer: ohne DRACOLoader bleibt die Geometrie
-// unlesbar, und ohne KTX2Loader bricht GLTFLoader beim ersten Basis-Bild ab —
-// das Modell erscheint dann gar nicht statt nur ungefaerbt.
+// Both decoders are mandatory, not optional: without DRACOLoader the geometry
+// stays unreadable, and without KTX2Loader GLTFLoader aborts on the first Basis
+// image — the model then does not appear at all instead of just uncoloured.
 const CDN = 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/';
 const draco = new DRACOLoader().setDecoderPath(CDN + 'draco/');
 const ktx2 = new KTX2Loader().setTranscoderPath(CDN + 'basis/').detectSupport(renderer);
@@ -357,15 +355,15 @@ const loader = new GLTFLoader().setDRACOLoader(draco).setKTX2Loader(ktx2);
 let current = null;
 const load = async (src, btn) => {
   msg.style.display = 'grid';
-  msg.textContent = 'laedt ' + src.split('/').pop() + ' …';
+  msg.textContent = 'loading ' + src.split('/').pop() + ' …';
   for (const b of document.querySelectorAll('.models button')) b.setAttribute('aria-pressed', String(b === btn));
   try {
     const gltf = await loader.loadAsync(src);
     if (current) { scene.remove(current); current.traverse(o => { o.geometry?.dispose?.(); }); }
     current = gltf.scene;
 
-    // Ohne aufgeloeste Texturen sind viele Materialien schwarz. Ein neutrales
-    // Material zeigt die Geometrie, um die es hier geht.
+    // Without resolved textures many materials are black. A neutral material
+    // shows the geometry, which is what this is about.
     current.traverse(o => {
       if (!o.isMesh) return;
       const had = o.material?.map;
@@ -373,7 +371,7 @@ const load = async (src, btn) => {
     });
 
     scene.add(current);
-    // Auf das Modell einpassen, egal wie gross es modelliert wurde.
+    // Fit to the model, however large it was modelled.
     const bb = new THREE.Box3().setFromObject(current);
     const size = bb.getSize(new THREE.Vector3()).length() || 1;
     const mid = bb.getCenter(new THREE.Vector3());
@@ -384,7 +382,7 @@ const load = async (src, btn) => {
     msg.style.display = 'none';
   } catch (e) {
     msg.style.display = 'grid';
-    msg.textContent = 'liess sich nicht laden: ' + String(e).slice(0, 120);
+    msg.textContent = 'could not be loaded: ' + String(e).slice(0, 120);
   }
 };
 
@@ -405,16 +403,16 @@ addEventListener('resize', () => {
 writeFileSync(join(DIR, 'showcase.html'), page, 'utf8');
 emit({ ev: 'done', cmd: 'showcase', out: join(DIR, 'showcase.html'), models: models.length, sounds: sounds.length, exit: 0 });
 console.log(`✓ ${join(DIR, 'showcase.html')}`);
-console.log(`  ${models.length} Modelle · ${sounds.length} Toene · ${other.length} weitere Dateien`);
+console.log(`  ${models.length} models · ${sounds.length} sounds · ${other.length} other files`);
 
-// ── Direkt zeigen ───────────────────────────────────────────────────────────
-// Import-Map und Module brauchen http; per Doppelklick blockt die CORS-Regel.
+// ── Show it directly ────────────────────────────────────────────────────────
+// Import map and modules need http; on double-click the CORS rule blocks them.
 const si = argv.indexOf('--serve');
 if (si > -1) {
   const port = Number(argv[si + 1]) || 4180;
   console.log(`\n  http://localhost:${port}/showcase.html`);
   spawn(process.execPath, [join(ROOT, 'tools/serve.mjs'), DIR, String(port)], { stdio: 'inherit' });
 } else {
-  console.log(`\n  Ansehen:  node bin/parity.mjs serve ${DIR} 4180`);
-  console.log(`            http://localhost:4180/showcase.html`);
+  console.log(`\n  View:  node bin/parity.mjs serve ${DIR} 4180`);
+  console.log(`         http://localhost:4180/showcase.html`);
 }

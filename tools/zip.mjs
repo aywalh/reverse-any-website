@@ -1,16 +1,16 @@
-// Ein ZIP-Schreiber aus der Node-Standardbibliothek.
+// A ZIP writer built on the Node standard library.
 //
-// Warum nicht adm-zip oder archiver: dieses Repo hat genau eine Abhaengigkeit
-// (Playwright), und das ist ein Merkmal, kein Zufall. Ein Archivformat, dessen
-// Aufbau seit 1989 unveraendert ist, rechtfertigt keine zweite.
+// Why not adm-zip or archiver: this repo has exactly one dependency
+// (Playwright), and that is a feature, not an accident. An archive format whose
+// layout has not changed since 1989 does not justify a second one.
 //
-// Geschrieben wird die einfachste gueltige Form: ein lokaler Header je Datei,
-// danach das zentrale Verzeichnis. Kein ZIP64, keine Verschluesselung, keine
-// Kommentare — fuer Archive unter 4 GB mit ein paar Dutzend Dateien ist das
-// vollstaendig ausreichend, und jeder Entpacker versteht es.
+// It writes the simplest valid form: one local header per file, followed by
+// the central directory. No ZIP64, no encryption, no comments — for archives
+// under 4 GB with a few dozen files that is entirely sufficient, and every
+// unzipper understands it.
 import { deflateRawSync } from 'node:zlib';
 
-// CRC-32, wie ZIP es verlangt. Tabelle einmal, dann ist es ein Byte-Durchlauf.
+// CRC-32, as ZIP requires. Build the table once, then it is a single byte pass.
 const TABLE = (() => {
   const t = new Uint32Array(256);
   for (let i = 0; i < 256; i++) {
@@ -27,13 +27,13 @@ const crc32 = buf => {
   return (c ^ 0xffffffff) >>> 0;
 };
 
-// MS-DOS-Zeitstempel: 2-Sekunden-Aufloesung, Jahre ab 1980. Aelter als das
-// Format selbst und immer noch das, was hier hineingehoert.
+// MS-DOS timestamp: 2-second resolution, years since 1980. Older than the
+// format itself and still what belongs here.
 const dosTime = d => ((d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1)) & 0xffff;
 const dosDate = d => (((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate()) & 0xffff;
 
 /**
- * @param {{name: string, data: Buffer|string}[]} files  Pfade mit "/" als Trenner.
+ * @param {{name: string, data: Buffer|string}[]} files  Paths with "/" as separator.
  * @param {Date} [when]
  * @returns {Buffer}
  */
@@ -46,8 +46,8 @@ export function zip(files, when = new Date()) {
     const name = Buffer.from(String(f.name).replace(/\\/g, '/'), 'utf8');
     const raw = Buffer.isBuffer(f.data) ? f.data : Buffer.from(f.data, 'utf8');
     const packed = deflateRawSync(raw);
-    // Wenn Komprimieren nichts bringt — schon komprimierte PNGs, WebM —, kostet
-    // es nur Zeit und macht die Datei groesser. Dann roh ablegen.
+    // When compressing gains nothing — already compressed PNGs, WebM — it only
+    // costs time and makes the file bigger. Store it raw then.
     const useDeflate = packed.length < raw.length;
     const body = useDeflate ? packed : raw;
     const method = useDeflate ? 8 : 0;
@@ -55,8 +55,8 @@ export function zip(files, when = new Date()) {
 
     const local = Buffer.alloc(30);
     local.writeUInt32LE(0x04034b50, 0);
-    local.writeUInt16LE(20, 4);          // benoetigte Version
-    local.writeUInt16LE(0x0800, 6);      // Bit 11: Dateiname ist UTF-8
+    local.writeUInt16LE(20, 4);          // version needed
+    local.writeUInt16LE(0x0800, 6);      // bit 11: file name is UTF-8
     local.writeUInt16LE(method, 8);
     local.writeUInt16LE(time, 10);
     local.writeUInt16LE(date, 12);
@@ -64,13 +64,13 @@ export function zip(files, when = new Date()) {
     local.writeUInt32LE(body.length, 18);
     local.writeUInt32LE(raw.length, 22);
     local.writeUInt16LE(name.length, 26);
-    local.writeUInt16LE(0, 28);          // kein Extra-Feld
+    local.writeUInt16LE(0, 28);          // no extra field
     parts.push(local, name, body);
 
     const cd = Buffer.alloc(46);
     cd.writeUInt32LE(0x02014b50, 0);
-    cd.writeUInt16LE(20, 4);             // erzeugt von
-    cd.writeUInt16LE(20, 6);             // benoetigte Version
+    cd.writeUInt16LE(20, 4);             // made by
+    cd.writeUInt16LE(20, 6);             // version needed
     cd.writeUInt16LE(0x0800, 8);
     cd.writeUInt16LE(method, 10);
     cd.writeUInt16LE(time, 12);
@@ -80,11 +80,11 @@ export function zip(files, when = new Date()) {
     cd.writeUInt32LE(raw.length, 24);
     cd.writeUInt16LE(name.length, 28);
     cd.writeUInt16LE(0, 30);             // Extra
-    cd.writeUInt16LE(0, 32);             // Kommentar
-    cd.writeUInt16LE(0, 34);             // Startdatentraeger
-    cd.writeUInt16LE(0, 36);             // interne Attribute
-    cd.writeUInt32LE(0, 38);             // externe Attribute
-    cd.writeUInt32LE(offset, 42);        // Position des lokalen Headers
+    cd.writeUInt16LE(0, 32);             // comment
+    cd.writeUInt16LE(0, 34);             // start disk
+    cd.writeUInt16LE(0, 36);             // internal attributes
+    cd.writeUInt32LE(0, 38);             // external attributes
+    cd.writeUInt32LE(offset, 42);        // offset of the local header
     central.push(cd, name);
 
     offset += local.length + name.length + body.length;
@@ -93,13 +93,13 @@ export function zip(files, when = new Date()) {
   const cdBuf = Buffer.concat(central);
   const end = Buffer.alloc(22);
   end.writeUInt32LE(0x06054b50, 0);
-  end.writeUInt16LE(0, 4);               // dieser Datentraeger
-  end.writeUInt16LE(0, 6);               // Datentraeger mit Verzeichnisbeginn
+  end.writeUInt16LE(0, 4);               // this disk
+  end.writeUInt16LE(0, 6);               // disk where the directory starts
   end.writeUInt16LE(files.length, 8);
   end.writeUInt16LE(files.length, 10);
   end.writeUInt32LE(cdBuf.length, 12);
   end.writeUInt32LE(offset, 16);
-  end.writeUInt16LE(0, 20);              // kein Archivkommentar
+  end.writeUInt16LE(0, 20);              // no archive comment
 
   return Buffer.concat([...parts, cdBuf, end]);
 }

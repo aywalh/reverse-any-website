@@ -1,9 +1,9 @@
-// parity ui — verbraucht den NDJSON-Strom aus /api/events und zeichnet ihn.
-// Kein Framework: sechs Panels rechtfertigen keins.
+// parity ui — consumes the NDJSON stream from /api/events and draws it.
+// No framework: six panels do not justify one.
 //
-// Zwei Methoden teilen sich diesen einen Strom: Full Clone (unten in dieser
-// Datei, unveraendert) und Selective Extraction (ui/extract.js). Der Server
-// faehrt immer nur eine von beiden gleichzeitig, deshalb reicht ein Kanal.
+// Two methods share this one stream: full clone (below in this file,
+// unchanged) and selective extraction (ui/extract.js). The server only ever
+// runs one of them at a time, so one channel is enough.
 import * as X from './extract.js';
 
 const $ = id => document.getElementById(id);
@@ -35,10 +35,10 @@ const SUMMARY = {
   capture:    e => e.resources + ' Res.',
   localize:   e => e.bytes + ' B',
   fetch:      e => e.downloaded + '/' + e.known,
-  verify:     e => e.notFound + ' fehlend',
+  verify:     e => e.notFound + ' missing',
   interact:   e => e.passed + '/' + e.total,
-  responsive: e => e.rows + ' Breiten',
-  diff:       e => (e.ok ? 'Parität' : e.mismatches + ' abw.'),
+  responsive: e => e.rows + ' widths',
+  diff:       e => (e.ok ? 'parity' : e.mismatches + ' diff.'),
 };
 
 // ── 404-Loop ────────────────────────────────────────────────────────────────
@@ -49,9 +49,9 @@ const roundCard = n => {
   if (!loop.rounds.size) $('loop').textContent = '';
   const box = el('div', 'round pending');
   const big = el('div', 'big');
-  big.append(el('span', null, '0'), Object.assign(el('small'), { textContent: 'Dateien' }));
+  big.append(el('span', null, '0'), Object.assign(el('small'), { textContent: 'files' }));
   const bar = el('div', 'bar'); bar.append(el('i'));
-  box.append(el('h3', null, 'Runde ' + n), big, bar, el('div', 'tick'));
+  box.append(el('h3', null, 'Round ' + n), big, bar, el('div', 'tick'));
   $('loop').append(box);
   const card = { box, num: big.firstChild, unit: big.lastChild, bar: bar.firstChild, tick: box.lastChild, n: 0 };
   loop.rounds.set(n, card);
@@ -65,7 +65,7 @@ const onAsset = e => {
   c.num.textContent = c.n;
   c.tick.textContent = (e.status ? e.status + ' ' : '') + e.path;
   c.bar.style.width = Math.min(100, (c.n % 200) / 2) + '%';
-  $('loop-c').textContent = loop.assets + ' Dateien gesamt';
+  $('loop-c').textContent = loop.assets + ' files total';
   loop.assets++;
 };
 
@@ -76,14 +76,14 @@ const closeRound = e => {
   c.box.className = 'round ' + (e.missing ? 'pending' : 'solved');
   c.num.textContent = e.missing === 0 ? c.n : c.n;
   c.unit.textContent = e.missing === 0
-    ? 'Dateien · 0 fehlen'
-    : 'Dateien · ' + e.missing + ' fehlen';
+    ? 'files · 0 missing'
+    : 'files · ' + e.missing + ' missing';
   c.tick.textContent = e.missing === 0
-    ? 'nichts offen — der Clone fragt nichts an, was es nicht gibt'
-    : e.missing + ' Pfade gehen in die naechste Runde';
+    ? 'nothing open — the clone requests nothing that does not exist'
+    : e.missing + ' paths go into the next round';
 };
 
-// ── Gegenmessung ────────────────────────────────────────────────────────────
+// ── Counter-measurement ─────────────────────────────────────────────────────
 let diffTable = null, notesBox = null;
 
 const diffRow = e => {
@@ -96,7 +96,7 @@ const diffRow = e => {
   tr.append(el('td', 'm', e.match ? '✓' : '✗'), el('td', 'l', e.label),
             el('td', 'v a', e.source), el('td', 'v b', e.clone));
   diffTable.append(tr);
-  $('diff-c').textContent = diffTable.rows.length + ' Prüfungen';
+  $('diff-c').textContent = diffTable.rows.length + ' checks';
 };
 
 const diffNote = e => {
@@ -107,24 +107,24 @@ const diffNote = e => {
 
 const verdict = e => {
   $('verdict').className = 'verdict ' + (e.ok ? 'ok' : 'bad');
-  $('verdict').textContent = e.ok ? '✓ Parität erreicht' : '✗ ' + e.mismatches + ' von ' + e.checked + ' Prüfungen weichen ab';
-  if (e.ok) $('verdict').append(el('small', null, 'Übereinstimmende Fehlschläge auf beiden Seiten zählen nicht als Defekt.'));
+  $('verdict').textContent = e.ok ? '✓ Parity reached' : '✗ ' + e.mismatches + ' of ' + e.checked + ' checks differ';
+  if (e.ok) $('verdict').append(el('small', null, 'Matching failures on both sides do not count as a defect.'));
 };
 
-// ── Screenshot-Blend ────────────────────────────────────────────────────────
-// Weg 1 aus dem Plan: das Original laesst sich wegen X-Frame-Options meist nicht
-// einbetten, also stehen hier die Aufnahmen an denselben Scroll-Marken.
+// ── Screenshot blend ────────────────────────────────────────────────────────
+// Option 1 from the plan: the original usually cannot be embedded because of
+// X-Frame-Options, so the captures at the same scroll marks stand here instead.
 const shots = new Map();   // mark -> { source, clone }
 let blendUI = null, activeMark = null;
 
-const MARK_LABEL = m => m === 'desktop-top' ? 'oben' : m === 'mobile-top' ? 'mobil' : m + '%';
+const MARK_LABEL = m => m === 'desktop-top' ? 'top' : m === 'mobile-top' ? 'mobile' : m + '%';
 
 const onShot = e => {
   const side = e.path.includes('/capture/source/') ? 'source'
              : e.path.includes('/capture/clone/') ? 'clone' : null;
   if (!side) return;
   const m = shots.get(e.mark) || {};
-  m[side] = e.path + '?t=' + Date.now();   // Runde 2 schreibt dieselben Namen neu
+  m[side] = e.path + '?t=' + Date.now();   // round 2 rewrites the same names
   shots.set(e.mark, m);
   renderBlend();
 };
@@ -134,7 +134,7 @@ const ready = () => ORDER.filter(m => shots.get(m)?.source && shots.get(m)?.clon
 
 function renderBlend() {
   const pairs = ready();
-  $('blend-c').textContent = pairs.length ? pairs.length + ' Marken' : shots.size + ' Aufnahmen, warte auf Gegenstück';
+  $('blend-c').textContent = pairs.length ? pairs.length + ' marks' : shots.size + ' captures, waiting for their counterpart';
   if (!pairs.length) return;
 
   if (!blendUI) {
@@ -145,7 +145,7 @@ function renderBlend() {
     stage.append(a, b, el('div', 'lab l', 'Original'), el('div', 'lab r', 'Clone'));
     const range = el('input');
     Object.assign(range, { type: 'range', min: 0, max: 100, value: 50 });
-    const hint = el('div', 'hint', 'links Original · rechts Clone');
+    const hint = el('div', 'hint', 'left original · right clone');
     range.addEventListener('input', () => { b.style.opacity = range.value / 100; });
     $('blend').append(marks, stage, range, hint);
     blendUI = { marks, a, b, range };
@@ -165,32 +165,32 @@ function renderBlend() {
   blendUI.b.style.opacity = blendUI.range.value / 100;
 }
 
-// ── Strom ───────────────────────────────────────────────────────────────────
+// ── Stream ──────────────────────────────────────────────────────────────────
 const status = (txt, cls = '') => { $('status').className = 'status ' + cls; $('status').innerHTML = txt; };
 
 const reset = () => {
   resetSteps();
   loop.rounds.clear(); loop.assets = 0; loop.current = null;
-  $('loop').innerHTML = '<div class="empty">wartet auf einen Lauf</div>';
+  $('loop').innerHTML = '<div class="empty">waiting for a run</div>';
   $('loop-c').textContent = '';
   diffTable = null; notesBox = null;
-  $('diff').innerHTML = '<div class="empty">wartet auf <code>diff</code></div>';
+  $('diff').innerHTML = '<div class="empty">waiting for <code>diff</code></div>';
   $('diff-c').textContent = ''; $('verdict').className = ''; $('verdict').textContent = '';
   shots.clear(); blendUI = null; activeMark = null;
-  $('blend').innerHTML = '<div class="empty">Screenshots erscheinen, sobald <code>verify --shots</code> gelaufen ist</div>';
+  $('blend').innerHTML = '<div class="empty">Screenshots appear once <code>verify --shots</code> has run</div>';
   $('blend-c').textContent = '';
 };
 
-// Kein Dedup noetig: bei einem Reconnect spielt der Server von Index 0 nach,
-// und das erste Ereignis eines Laufs ist 'run start' — das raeumt die Ansicht
-// vorher ab. Ein Zaehler hier wuerde stattdessen den naechsten Lauf verschlucken,
-// weil dessen Puffer serverseitig wieder bei 0 beginnt.
+// No dedup needed: on reconnect the server replays from index 0, and the
+// first event of a run is 'run start' — which clears the view first. A
+// counter here would instead swallow the next run, because its buffer starts
+// at 0 again on the server.
 const handle = e => {
   switch (e.ev) {
     case 'run':
-      if (e.status === 'start') { reset(); status('läuft <b>' + e.url + '</b>'); $('go').disabled = true; }
-      if (e.status === 'end')   { status(e.exit === 0 ? '<b>Parität</b>' : '<b>Abweichung</b>', e.exit === 0 ? 'ok' : 'bad'); $('go').disabled = false; }
-      if (e.status === 'error') { status('<b>Fehler</b>', 'bad'); $('go').disabled = false; }
+      if (e.status === 'start') { reset(); status('running <b>' + e.url + '</b>'); $('go').disabled = true; }
+      if (e.status === 'end')   { status(e.exit === 0 ? '<b>Parity</b>' : '<b>Difference</b>', e.exit === 0 ? 'ok' : 'bad'); $('go').disabled = false; }
+      if (e.status === 'error') { status('<b>Error</b>', 'bad'); $('go').disabled = false; }
       break;
     case 'cmd':
       setStep(e.name, e.status === 'start' ? 'run' : 'done');
@@ -203,8 +203,8 @@ const handle = e => {
     case 'asset':  onAsset(e); break;
     case 'shot':   onShot(e); break;
     case 'row':    if (e.kind === 'diff') diffRow(e); break;
-    // Notizen aus der Extraktion gehoeren in deren Ansicht, nicht unter die
-    // Gegenmessung — sonst stehen sie im falschen Panel.
+    // Notes from the extraction belong in its view, not under the
+    // counter-measurement — otherwise they land in the wrong panel.
     case 'note':   if (e.kind !== 'extract') diffNote(e); break;
     case 'done':
       if (SUMMARY[e.cmd]) setStep(e.cmd, 'done', SUMMARY[e.cmd](e));
@@ -220,16 +220,16 @@ new EventSource('/api/events').onmessage = m => {
   X.handle(e);    // Selective Extraction
 };
 
-// ── Steuerung ───────────────────────────────────────────────────────────────
+// ── Controls ────────────────────────────────────────────────────────────────
 const post = async (path, body) => {
   const r = await fetch(path, { method: 'POST', body: JSON.stringify(body) });
   if (!r.ok) status('<b>' + ((await r.json()).err || r.status) + '</b>', 'bad');
   return r.ok;
 };
 
-// ── Moduswahl ───────────────────────────────────────────────────────────────
-// Zwei Methoden, klar getrennt. Full Clone bleibt die Vorgabe — es ist der
-// bestehende Ablauf und wird durch die Erweiterung nicht ersetzt.
+// ── Mode selection ──────────────────────────────────────────────────────────
+// Two methods, clearly separated. Full clone stays the default — it is the
+// existing flow and is not replaced by the extension.
 let mode = 'clone';
 const setMode = next => {
   mode = next;
@@ -237,7 +237,7 @@ const setMode = next => {
   $('mode-extract').setAttribute('aria-selected', String(next === 'extract'));
   $('view-clone').hidden = next !== 'clone';
   $('view-extract').hidden = next !== 'extract';
-  $('go').textContent = next === 'clone' ? 'Lauf starten' : 'Seite oeffnen';
+  $('go').textContent = next === 'clone' ? 'Start run' : 'Open page';
   $('ev').hidden = next !== 'clone';
   if (next === 'extract') X.init();
 };

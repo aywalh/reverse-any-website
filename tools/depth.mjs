@@ -94,8 +94,8 @@ if (OUT) { mkdirSync(OUT, { recursive: true }); writeFileSync(join(OUT, 'DEPTH.j
 emit({ ev: 'done', cmd: 'depth', ...report, exit: 0 });
 
 console.log(`\n${URL_}
-  Dokument: ${docHeight}px ${locked ? '(overflow gesperrt — der Wert sagt nichts)' : ''}
-  ${turns} Radumdrehungen à ${STEP}px · ${changes} davon haben das Bild geändert
-  letzte Änderung bei Umdrehung ${lastChange} → ${travel.toLocaleString('de-DE')} px Radweg
-  Reichweite: ${report.reach.toLocaleString('de-DE')} ${report.unit}\n`);
+  Document: ${docHeight}px ${locked ? '(overflow locked — the value says nothing)' : ''}
+  ${turns} wheel turns of ${STEP}px · ${changes} of them changed the frame
+  last change at turn ${lastChange} → ${travel.toLocaleString('en-US')} px of wheel travel
+  Reach: ${report.reach.toLocaleString('en-US')} ${report.unit}\n`);
 await browser.close();

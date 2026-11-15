@@ -1,10 +1,10 @@
-// parity ui — Selective Extraction.
+// parity ui — selective extraction.
 //
-// Der Picker laeuft im Elternfenster und liest den DOM des iframes direkt.
-// Das geht nur, weil die inspizierte Seite vom selben Server kommt wie diese
-// Oberflaeche (siehe serveSite in ui/server.mjs). Deshalb wird auch nichts in
-// die Seite hineingeschrieben — kein injiziertes Overlay, kein postMessage,
-// keine Skripte, die mit denen der Seite kollidieren koennen.
+// The picker runs in the parent window and reads the iframe's DOM directly.
+// That only works because the inspected page comes from the same server as
+// this interface (see serveSite in ui/server.mjs). That is also why nothing is
+// written into the page — no injected overlay, no postMessage, no scripts that
+// could collide with the page's own.
 
 const $ = id => document.getElementById(id);
 const el = (tag, cls, txt) => {
@@ -15,13 +15,13 @@ const el = (tag, cls, txt) => {
 };
 const esc = s => String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 
-// ── Fortschritt ─────────────────────────────────────────────────────────────
-// Dieselben elf Schritte, die tools/extract.mjs meldet.
+// ── Progress ────────────────────────────────────────────────────────────────
+// The same eleven steps tools/extract.mjs reports.
 const STEPS = [
-  ['element', 'Element gefunden'], ['animation', 'Animation erkannt'], ['trigger', 'Trigger erkannt'],
-  ['css', 'CSS untersucht'], ['js', 'JavaScript untersucht'], ['deps', 'Abhaengigkeiten geprueft'],
-  ['original', 'Original-Preview'], ['isolatability', 'Isolierbarkeit'], ['isolated', 'Isolierte Preview'],
-  ['code', 'Code vorbereitet'], ['export', 'Export bereit'],
+  ['element', 'Element found'], ['animation', 'Animation detected'], ['trigger', 'Trigger detected'],
+  ['css', 'CSS inspected'], ['js', 'JavaScript inspected'], ['deps', 'Dependencies checked'],
+  ['original', 'Original preview'], ['isolatability', 'Isolatability'], ['isolated', 'Isolated preview'],
+  ['code', 'Code prepared'], ['export', 'Export ready'],
 ];
 const stepEl = {};
 
@@ -38,24 +38,24 @@ const resetSteps = () => {
   for (const [k] of STEPS) { if (!stepEl[k]) continue; delete stepEl[k].dataset.s; stepEl[k].querySelector('.v').textContent = '·'; }
 };
 
-// ── Zustand ─────────────────────────────────────────────────────────────────
+// ── State ───────────────────────────────────────────────────────────────────
 const state = {
-  url: null,          // Original-URL — dagegen wird gemessen
-  picked: null,       // Element im iframe
+  url: null,          // original URL — measured against this
+  picked: null,       // element in the iframe
   selector: null,
   scope: 'element',
   trigger: 'auto',
-  meta: null,         // metadata.json der letzten Analyse
+  meta: null,         // metadata.json of the last analysis
   base: null,         // /extractions/<slug>
 };
 
 const frame = () => $('frame');
 const fdoc = () => { try { return frame().contentDocument; } catch { return null; } };
 
-// ── Selector fuer ein Element ───────────────────────────────────────────────
-// Muss im Dokument eindeutig sein, sonst misst extract spaeter ein anderes
-// Element als das angeklickte. Wird deshalb gegen den DOM geprueft, nicht
-// nur zusammengebaut.
+// ── Selector for an element ─────────────────────────────────────────────────
+// Must be unique in the document, otherwise extract later measures a different
+// element than the one clicked. So it is checked against the DOM, not just
+// assembled.
 const CSSesc = s => (window.CSS && CSS.escape) ? CSS.escape(s) : String(s).replace(/([^\w-])/g, '\\$1');
 
 const uniqueSelector = (doc, node) => {
@@ -68,8 +68,8 @@ const uniqueSelector = (doc, node) => {
     if (n.id && one('#' + CSSesc(n.id))) { parts.unshift('#' + CSSesc(n.id)); break; }
 
     let s = n.tagName.toLowerCase();
-    // Generierte Klassen (hash-artig) taugen nicht als Anker — sie aendern sich
-    // beim naechsten Build der Zielseite.
+    // Generated (hash-like) classes are no good as anchors — they change with
+    // the target page's next build.
     const cls = [...n.classList].filter(c => /^[a-zA-Z][\w-]{1,40}$/.test(c) && !/^[a-z]+-[a-z0-9]{6,}$/i.test(c)).slice(0, 3);
     if (cls.length) s += '.' + cls.map(CSSesc).join('.');
 
@@ -98,8 +98,8 @@ const domPathOf = node => {
   return parts.join(' > ');
 };
 
-// Was an diesem Element ueberhaupt Bewegung verspricht — reine Vorschau, die
-// echte Antwort liefert erst die Messung.
+// What on this element promises motion at all — a preview only, the real
+// answer comes from the measurement.
 const hintFor = node => {
   const doc = fdoc();
   if (!doc || !doc.defaultView) return '—';
@@ -107,17 +107,16 @@ const hintFor = node => {
   const bits = [];
   if (parseFloat(c.transitionDuration) > 0) bits.push('transition ' + c.transitionDuration.split(',')[0].trim());
   if (c.animationName && c.animationName !== 'none') bits.push('@keyframes ' + c.animationName.split(',')[0].trim());
-  try { const a = node.getAnimations({ subtree: true }); if (a.length) bits.push(a.length + ' laufende Animation(en)'); } catch {}
+  try { const a = node.getAnimations({ subtree: true }); if (a.length) bits.push(a.length + ' running animation(s)'); } catch {}
   if (node.querySelector('canvas') || node.tagName === 'CANVAS') bits.push('Canvas');
   if (node.querySelector('video') || node.tagName === 'VIDEO') bits.push('Video');
   if (node.querySelector('svg')) bits.push('SVG');
-  return bits.length ? bits.join(' · ') : 'keine CSS-Bewegung im Ruhezustand — Trigger noetig';
+  return bits.length ? bits.join(' · ') : 'no CSS motion at rest — trigger needed';
 };
 
 // ── Highlight ───────────────────────────────────────────────────────────────
-// Der Rahmen wird im Elternfenster gezeichnet. In die Seite hineinzuschreiben
-// wuerde ihr Layout veraendern — und damit genau das verfaelschen, was hier
-// gemessen werden soll.
+// The frame is drawn in the parent window. Writing into the page would change
+// its layout — and thereby distort exactly what is to be measured here.
 const drawHighlight = node => {
   const hl = $('hl');
   if (!node) { hl.hidden = true; return; }
@@ -144,7 +143,7 @@ const pick = node => {
   $('p-path').textContent = domPathOf(node);
   $('p-hint').textContent = hintFor(node);
   $('sel-count').textContent = (() => {
-    try { return doc.querySelectorAll(state.selector).length + ' Treffer'; } catch { return 'Selector nicht pruefbar'; }
+    try { return doc.querySelectorAll(state.selector).length + ' matches'; } catch { return 'selector not checkable'; }
   })();
   $('sec-pick').hidden = false;
   $('analyse').disabled = false;
@@ -152,13 +151,13 @@ const pick = node => {
   drawHighlight(node);
 };
 
-// ── iframe verdrahten ───────────────────────────────────────────────────────
+// ── Wire up the iframe ──────────────────────────────────────────────────────
 let wired = false;
 const wireFrame = () => {
   const doc = fdoc();
-  if (!doc) { $('pick-c').textContent = 'Seite nicht lesbar'; return; }
+  if (!doc) { $('pick-c').textContent = 'page not readable'; return; }
   wired = true;
-  $('pick-c').textContent = 'mit der Maus fahren, dann klicken';
+  $('pick-c').textContent = 'hover with the mouse, then click';
 
   doc.addEventListener('mousemove', e => {
     const n = doc.elementFromPoint(e.clientX, e.clientY);
@@ -166,8 +165,8 @@ const wireFrame = () => {
   }, true);
   doc.addEventListener('mouseleave', () => drawHighlight(state.picked), true);
 
-  // Capture-Phase: die Seite darf den Klick nicht vorher abfangen, und
-  // navigieren soll er auch nicht — sonst ist das Inspect-Ziel weg.
+  // Capture phase: the page must not intercept the click first, and it must
+  // not navigate either — otherwise the inspect target is gone.
   doc.addEventListener('click', e => {
     e.preventDefault();
     e.stopPropagation();
@@ -175,14 +174,14 @@ const wireFrame = () => {
   }, true);
   doc.addEventListener('submit', e => e.preventDefault(), true);
 
-  // Beim Scrollen im iframe wandert das Element unter dem Rahmen weg.
+  // Scrolling in the iframe moves the element out from under the frame.
   doc.addEventListener('scroll', () => drawHighlight(state.picked), true);
   frame().contentWindow.addEventListener('resize', () => drawHighlight(state.picked));
 };
 
 window.addEventListener('scroll', () => state.picked && drawHighlight(state.picked), true);
 
-// ── Verwandtschaft ──────────────────────────────────────────────────────────
+// ── Relatives ───────────────────────────────────────────────────────────────
 const REL = {
   parent: n => n.parentElement,
   child: n => n.firstElementChild,
@@ -206,7 +205,7 @@ const wireChips = (id, key) => {
   });
 };
 
-// ── Analyse anstossen ───────────────────────────────────────────────────────
+// ── Kick off the analysis ───────────────────────────────────────────────────
 const post = async (path, body) => {
   const r = await fetch(path, { method: 'POST', body: JSON.stringify(body) });
   const j = await r.json().catch(() => ({}));
@@ -216,11 +215,11 @@ const post = async (path, body) => {
 
 export const openSite = async url => {
   state.url = url;
-  $('inspect-empty').textContent = 'Seite wird geholt…';
+  $('inspect-empty').textContent = 'fetching page…';
   try {
     await post('/api/inspect', { url });
   } catch (e) {
-    $('inspect-empty').textContent = 'Fehler: ' + e.message;
+    $('inspect-empty').textContent = 'Error: ' + e.message;
   }
 };
 
@@ -228,26 +227,26 @@ const startAnalysis = async () => {
   if (!state.selector || !state.url) return;
   resetSteps();
   $('analyse').disabled = true;
-  $('info').innerHTML = '<div class="empty">Analyse laeuft…</div>';
-  $('preview').innerHTML = '<div class="empty">Analyse laeuft…</div>';
-  $('code').innerHTML = '<div class="empty">Analyse laeuft…</div>';
+  $('info').innerHTML = '<div class="empty">analysis running…</div>';
+  $('preview').innerHTML = '<div class="empty">analysis running…</div>';
+  $('code').innerHTML = '<div class="empty">analysis running…</div>';
   try {
     await post('/api/extract', {
       url: state.url, selector: state.selector, scope: state.scope,
       trigger: state.trigger, title: $('p-title').value.trim() || undefined,
     });
   } catch (e) {
-    $('info').innerHTML = '<div class="empty">Fehler: ' + esc(e.message) + '</div>';
+    $('info').innerHTML = '<div class="empty">Error: ' + esc(e.message) + '</div>';
     $('analyse').disabled = false;
   }
 };
 
-// ── Ergebnis darstellen ─────────────────────────────────────────────────────
+// ── Render the result ───────────────────────────────────────────────────────
 const ISO_LABEL = {
-  isolatable: ['isolierbar', 'ok'],
-  partial: ['teilweise isolierbar', 'limit'],
-  'reference-only': ['nur als Referenz dokumentierbar', 'limit'],
-  'not-analysable': ['nicht analysierbar', 'bad'],
+  isolatable: ['isolatable', 'ok'],
+  partial: ['partially isolatable', 'limit'],
+  'reference-only': ['documentable as reference only', 'limit'],
+  'not-analysable': ['not analysable', 'bad'],
 };
 
 const kv = (parent, label, value, cls) => {
@@ -265,42 +264,42 @@ const renderInfo = m => {
   const [isoText, isoCls] = ISO_LABEL[m.isolatability] || [m.isolatability, ''];
 
   kv(box, 'Name', m.title);
-  kv(box, 'Elementtyp', m.category);
+  kv(box, 'Element type', m.category);
   kv(box, 'Selector', Object.assign(el('code'), { textContent: m.selector }));
-  kv(box, 'DOM-Pfad', Object.assign(el('code', 'wrapcode'), { textContent: m.domPath }));
+  kv(box, 'DOM path', Object.assign(el('code', 'wrapcode'), { textContent: m.domPath }));
   kv(box, 'Trigger', m.triggers.join(', '));
-  kv(box, 'Technik', m.techniques.join(', ') || '—');
-  kv(box, 'Libraries', m.dependencies.libraries.join(', ') || 'keine erkannt');
-  kv(box, 'Assets', m.assets.length ? m.assets.length + ' fremde Dateien' : 'keine');
-  kv(box, 'Schriften', m.fonts.join(' · ') || '—');
+  kv(box, 'Technique', m.techniques.join(', ') || '—');
+  kv(box, 'Libraries', m.dependencies.libraries.join(', ') || 'none detected');
+  kv(box, 'Assets', m.assets.length ? m.assets.length + ' third-party files' : 'none');
+  kv(box, 'Fonts', m.fonts.join(' · ') || '—');
 
   const t = m.timing;
   kv(box, 'Timing', t.durationMs != null
-    ? `${t.durationMs}ms${t.delayMs ? ' · Delay ' + t.delayMs + 'ms' : ''} (${t.durationSource})${t.loops ? ' · Endlosschleife' : ''}`
-    : 'keine Dauer messbar');
+    ? `${t.durationMs}ms${t.delayMs ? ' · delay ' + t.delayMs + 'ms' : ''} (${t.durationSource})${t.loops ? ' · infinite loop' : ''}`
+    : 'no measurable duration');
   kv(box, 'Easing', m.easing.join(' · ') || '—');
-  kv(box, 'Eigenschaften', m.properties.join(', ') || 'keine Bewegung gemessen');
-  kv(box, 'Wiederholungen', `${t.repeats}× gemessen${t.stableAcrossRepeats === false ? ' — nicht deckungsgleich' : t.stableAcrossRepeats ? ', deckungsgleich' : ''}`);
+  kv(box, 'Properties', m.properties.join(', ') || 'no motion measured');
+  kv(box, 'Repeats', `measured ${t.repeats}×${t.stableAcrossRepeats === false ? ' — not matching' : t.stableAcrossRepeats ? ', matching' : ''}`);
 
   const rm = m.reducedMotion;
   kv(box, 'Reduced Motion',
-    !rm.probed ? 'nicht gemessen'
-    : rm.respected === null ? 'kein Motion deklariert — nichts zu reduzieren'
-    : rm.respected ? '✓ die Quellseite reagiert darauf'
-    : '✗ die Quellseite ignoriert die Einstellung',
+    !rm.probed ? 'not measured'
+    : rm.respected === null ? 'no motion declared — nothing to reduce'
+    : rm.respected ? '✓ the source page responds to it'
+    : '✗ the source page ignores the setting',
     rm.respected === false ? 'bad' : rm.respected === true ? 'ok' : '');
   kv(box, 'Accessibility', [
-    m.accessibility.interactive ? 'interaktiv' : 'statisch',
-    m.accessibility.focusable ? 'fokussierbar' : 'nicht fokussierbar',
-    m.accessibility.hasText ? 'mit Text' : 'ohne Text',
+    m.accessibility.interactive ? 'interactive' : 'static',
+    m.accessibility.focusable ? 'focusable' : 'not focusable',
+    m.accessibility.hasText ? 'with text' : 'without text',
   ].join(' · '));
-  kv(box, 'Isolierbarkeit', isoText, isoCls);
+  kv(box, 'Isolatability', isoText, isoCls);
   kv(box, 'Confidence', String(m.confidence), m.confidence >= 0.8 ? 'ok' : m.confidence >= 0.5 ? 'limit' : 'bad');
   kv(box, 'Status', m.status);
 
   if (m.warnings.length) {
     const w = el('div', 'notes');
-    w.append(el('div', null, m.warnings.length + ' Hinweis(e):'));
+    w.append(el('div', null, m.warnings.length + ' note(s):'));
     for (const x of m.warnings) w.append(el('div', 'limit', '· ' + x));
     box.append(w);
   }
@@ -346,15 +345,15 @@ const renderPreview = m => {
   if (previewTab === 'original') {
     if (m.previews.original) {
       const pair = el('div', 'pair');
-      const a = el('figure'); a.append(shot(m.previews.original, 'Original vor dem Trigger'), el('figcaption', null, 'vor dem Trigger'));
+      const a = el('figure'); a.append(shot(m.previews.original, 'Original before the trigger'), el('figcaption', null, 'before the trigger'));
       pair.append(a);
       if (m.previews.originalAfter) {
-        const b = el('figure'); b.append(shot(m.previews.originalAfter, 'Original nach dem Trigger'), el('figcaption', null, 'nach ' + m.triggers[0]));
+        const b = el('figure'); b.append(shot(m.previews.originalAfter, 'Original after the trigger'), el('figcaption', null, 'after ' + m.triggers[0]));
         pair.append(b);
       }
       stage.append(pair);
-      stage.append(note('Aufnahmen aus der laufenden Originalseite. Ein Live-Einbetten des Originals scheitert bei den meisten Produktionsseiten an X-Frame-Options.'));
-    } else stage.append(note('Keine Original-Aufnahme — das Element war nicht aufnehmbar.', 'bad'));
+      stage.append(note('Captures from the running original page. Embedding the original live fails on most production sites because of X-Frame-Options.'));
+    } else stage.append(note('No original capture — the element could not be captured.', 'bad'));
   }
 
   if (previewTab === 'isolated') {
@@ -363,11 +362,11 @@ const renderPreview = m => {
       const f = el('iframe');
       f.id = 'pframe';
       f.src = base + '/vanilla/index.html?t=' + Date.now();
-      f.title = 'Isolierte Preview';
+      f.title = 'Isolated preview';
       wrap.append(f);
       stage.append(controls(), wrap);
-      stage.append(note('Original-Markup und Original-CSS, auf das Ziel reduziert. Keine eigene Implementierung — nicht veroeffentlichen.'));
-    } else stage.append(note('Keine isolierte Fassung erzeugt.', 'bad'));
+      stage.append(note('Original markup and original CSS, reduced to the target. Not an implementation of your own — do not publish.'));
+    } else stage.append(note('No isolated version produced.', 'bad'));
   }
 
   if (previewTab === 'rebuilt') {
@@ -376,38 +375,38 @@ const renderPreview = m => {
       const f = el('iframe');
       f.id = 'pframe';
       f.src = base + '/rebuilt/index.html?t=' + Date.now();
-      f.title = 'Nachgebaute Preview';
+      f.title = 'Rebuilt preview';
       wrap.append(f);
       stage.append(controls(), wrap);
-      stage.append(note(`Neu geschrieben aus der Messung — .${m.rebuild?.root} als ${m.rebuild?.technique}, `
-        + `Trigger ${m.rebuild?.trigger}. Kennt das CSS der Quellseite nicht.`));
+      stage.append(note(`Newly written from the measurement — .${m.rebuild?.root} as ${m.rebuild?.technique}, `
+        + `trigger ${m.rebuild?.trigger}. Does not know the source page's CSS.`));
       if (m.rebuild?.notes?.length) {
         const ul = el('ul', 'why');
         for (const n of m.rebuild.notes.slice(1)) ul.append(el('li', null, n));
         if (ul.children.length) stage.append(ul);
       }
     } else {
-      // Ehrlichkeit ist hier Pflicht. Ein leerer Rahmen mit dem Original darin
-      // waere eine Luege, und ein geratener Nachbau auch.
-      stage.append(note('Fuer dieses Ziel wird keine eigene Fassung erzeugt.', 'limit'));
+      // Honesty is mandatory here. An empty frame with the original in it
+      // would be a lie, and so would a guessed rebuild.
+      stage.append(note('No independent version is produced for this target.', 'limit'));
       const why = el('ul', 'why');
       if (m.isolatability === 'reference-only')
-        why.append(el('li', null, 'Nur als Referenz dokumentierbar: ' + (m.warnings[0] || 'die Runtime laesst sich nicht ausschneiden.')));
+        why.append(el('li', null, 'Documentable as reference only: ' + (m.warnings[0] || 'the runtime cannot be cut out.')));
       for (const t of ['webgl', 'canvas', 'three', 'rive']) {
-        if (m.techniques?.includes(t)) { why.append(el('li', null, `Der Inhalt entsteht aus ${t} — was dort gezeichnet wird, steht in keiner CSS-Regel.`)); break; }
+        if (m.techniques?.includes(t)) { why.append(el('li', null, `The content comes from ${t} — what is drawn there is in no CSS rule.`)); break; }
       }
-      why.append(el('li', null, 'Was es gibt: die vollstaendige Messung, den Bericht und die isolierte Fassung mit Original-Code.'));
+      why.append(el('li', null, 'What there is: the complete measurement, the report and the isolated version with original code.'));
       stage.append(why);
     }
   }
 
   if (previewTab === 'comparison') {
-    // Original gegen die EIGENE Fassung, sobald es sie gibt — das ist der
-    // Vergleich, der etwas beweist. Die isolierte Fassung enthaelt dasselbe
-    // CSS wie das Original; sie danebenzustellen zeigt vor allem, dass
-    // Kopieren funktioniert.
+    // Original against the INDEPENDENT version as soon as there is one — that
+    // is the comparison that proves something. The isolated version contains
+    // the same CSS as the original; putting it alongside mainly shows that
+    // copying works.
     const rightFile = m.previews.rebuilt || m.previews.isolated;
-    const rightLabel = m.previews.rebuilt ? 'Nachgebaut' : 'Isoliert';
+    const rightLabel = m.previews.rebuilt ? 'Rebuilt' : 'Isolated';
     if (m.previews.original && rightFile) {
       const wrap = el('div', 'blend');
       const a = el('img', 'a'), b = el('img', 'b');
@@ -418,9 +417,9 @@ const renderPreview = m => {
       Object.assign(range, { type: 'range', min: 0, max: 100, value: 50 });
       range.addEventListener('input', () => { b.style.opacity = range.value / 100; });
       b.style.opacity = .5;
-      stage.append(wrap, range, el('div', 'hint', `Regler: links Original, rechts ${rightLabel.toLowerCase()}e Fassung`));
-      if (!m.previews.rebuilt) stage.append(note('Verglichen wird gegen die isolierte Fassung — eine eigene Fassung gibt es fuer dieses Ziel nicht.', 'limit'));
-    } else stage.append(note('Fuer den Vergleich fehlt eine der beiden Aufnahmen.', 'limit'));
+      stage.append(wrap, range, el('div', 'hint', `Slider: left original, right ${rightLabel.toLowerCase()} version`));
+      if (!m.previews.rebuilt) stage.append(note('Compared against the isolated version — there is no independent version for this target.', 'limit'));
+    } else stage.append(note('One of the two captures needed for the comparison is missing.', 'limit'));
   }
 
   // Export
@@ -432,17 +431,17 @@ const renderPreview = m => {
     return a;
   };
   if (m.previews.original) ex.append(dl(base + '/' + m.previews.original, 'Screenshot Original'));
-  if (m.previews.isolated) ex.append(dl(base + '/' + m.previews.isolated, 'Screenshot Isoliert'));
-  ex.append(dl(base + '/report.md', 'Analysebericht'));
-  ex.append(dl(base + '/metadata.json', 'Metadaten JSON'));
-  ex.append(dl(base + '/vanilla/index.html', 'Isolierte Demo'));
-  if (m.code.rebuilt) ex.append(dl(base + '/rebuilt/index.html', 'Nachbau-Demo'));
-  if (m.code.react) ex.append(dl(base + '/react/Component.jsx', 'React-Komponente'));
-  if (m.code.svelte) ex.append(dl(base + '/svelte/Component.svelte', 'Svelte-Komponente'));
-  if (m.previews.rebuilt) ex.append(dl(base + '/' + m.previews.rebuilt, 'Screenshot Nachbau'));
+  if (m.previews.isolated) ex.append(dl(base + '/' + m.previews.isolated, 'Screenshot isolated'));
+  ex.append(dl(base + '/report.md', 'Analysis report'));
+  ex.append(dl(base + '/metadata.json', 'Metadata JSON'));
+  ex.append(dl(base + '/vanilla/index.html', 'Isolated demo'));
+  if (m.code.rebuilt) ex.append(dl(base + '/rebuilt/index.html', 'Rebuild demo'));
+  if (m.code.react) ex.append(dl(base + '/react/Component.jsx', 'React component'));
+  if (m.code.svelte) ex.append(dl(base + '/svelte/Component.svelte', 'Svelte component'));
+  if (m.previews.rebuilt) ex.append(dl(base + '/' + m.previews.rebuilt, 'Screenshot rebuild'));
   if (m.previews.video) ex.append(dl(base + '/' + m.previews.video, 'Video (webm)'));
-  if (m.code.single) ex.append(dl(base + '/' + m.code.single, 'Einzeldatei'));
-  if (m.code.zip) ex.append(dl(base + '/' + m.code.zip, 'ZIP (alles)'));
+  if (m.code.single) ex.append(dl(base + '/' + m.code.single, 'Single file'));
+  if (m.code.zip) ex.append(dl(base + '/' + m.code.zip, 'ZIP (everything)'));
   box.append(ex);
 
   $('preview').innerHTML = '';
@@ -450,15 +449,15 @@ const renderPreview = m => {
   $('prev-c').textContent = PREVIEW_TABS.find(t => t[0] === previewTab)[1];
 };
 
-// Steuerung der isolierten Preview. Die generierte script.js im iframe hoert
-// auf postMessage — deshalb funktioniert das ohne Zugriff auf ihre Interna.
+// Controls for the isolated preview. The generated script.js in the iframe
+// listens to postMessage — which is why this works without access to its internals.
 const controls = () => {
   const bar = el('div', 'controls');
   const send = (cmd, arg) => {
     const f = $('pframe');
     f?.contentWindow?.postMessage({ parity: { cmd, arg } }, '*');
   };
-  for (const [cmd, label] of [['play', 'Play'], ['pause', 'Pause'], ['restart', 'Restart'], ['reset', 'Reset'], ['fire', 'Trigger ausloesen']]) {
+  for (const [cmd, label] of [['play', 'Play'], ['pause', 'Pause'], ['restart', 'Restart'], ['reset', 'Reset'], ['fire', 'Fire trigger']]) {
     const b = el('button', 'ghost', label);
     b.onclick = () => send(cmd, null);
     bar.append(b);
@@ -496,10 +495,10 @@ const controls = () => {
     d.head.append(s);
     rm.setAttribute('aria-pressed', 'true');
   };
-  rm.title = 'Simuliert prefers-reduced-motion in der Preview. Wie die Originalseite darauf reagiert, steht in der Analyse.';
+  rm.title = 'Simulates prefers-reduced-motion in the preview. How the original page responds to it is in the analysis.';
   bar.append(rm);
 
-  const full = el('button', 'ghost', 'Vollbild');
+  const full = el('button', 'ghost', 'Fullscreen');
   full.onclick = () => $('pframe')?.parentElement?.requestFullscreen?.();
   bar.append(full);
 
@@ -507,8 +506,8 @@ const controls = () => {
 };
 
 // ── Code ────────────────────────────────────────────────────────────────────
-// Kleiner Regex-Highlighter statt einer Library. Er faerbt Strings, Kommentare,
-// Schluesselwoerter und Zahlen — mehr braucht ein Lesefenster nicht.
+// A small regex highlighter instead of a library. It colours strings, comments,
+// keywords and numbers — a reading pane needs no more.
 const highlight = (src, lang) => {
   let s = esc(src);
   const box = [];
@@ -524,23 +523,23 @@ const highlight = (src, lang) => {
 
 const renderCode = async m => {
   const base = state.base;
-  // Zwei Herkuenfte, deutlich getrennt. "Isoliert" ist Original-Code der
-  // Quellseite, "Nachbau" ist aus der Messung geschrieben. Wer die verwechselt,
-  // veroeffentlicht fremden Code als eigenen.
+  // Two origins, clearly separated. "Isolated" is the source page's original
+  // code, "Rebuild" is written from the measurement. Mix them up and you
+  // publish someone else's code as your own.
   const files = [
-    ['Isoliert · HTML', 'vanilla/index.html', 'html'],
-    ['Isoliert · CSS', 'vanilla/style.css', 'css'],
-    ['Isoliert · JS', 'vanilla/script.js', 'js'],
+    ['Isolated · HTML', 'vanilla/index.html', 'html'],
+    ['Isolated · CSS', 'vanilla/style.css', 'css'],
+    ['Isolated · JS', 'vanilla/script.js', 'js'],
     ...(m.code.rebuilt ? [
-      ['Nachbau · HTML', 'rebuilt/index.html', 'html'],
-      ['Nachbau · CSS', 'rebuilt/style.css', 'css'],
-      ['Nachbau · JS', 'rebuilt/script.js', 'js'],
+      ['Rebuild · HTML', 'rebuilt/index.html', 'html'],
+      ['Rebuild · CSS', 'rebuilt/style.css', 'css'],
+      ['Rebuild · JS', 'rebuilt/script.js', 'js'],
     ] : []),
     ...(m.code.react ? [['React', 'react/Component.jsx', 'js']] : []),
     ...(m.code.svelte ? [['Svelte', 'svelte/Component.svelte', 'html']] : []),
-    ['Metadaten', 'metadata.json', 'js'],
-    ['Bericht', 'report.md', 'md'],
-    ...(m.code.rebuilt ? [] : [['Warum kein Nachbau', 'NOT-REBUILT.md', 'md']]),
+    ['Metadata', 'metadata.json', 'js'],
+    ['Report', 'report.md', 'md'],
+    ...(m.code.rebuilt ? [] : [['Why no rebuild', 'NOT-REBUILT.md', 'md']]),
   ];
   const box = el('div');
   const tabs = el('div', 'chips');
@@ -551,27 +550,27 @@ const renderCode = async m => {
     active = i;
     for (const [j, b] of [...tabs.children].entries()) b.setAttribute('aria-pressed', String(j === i));
     const [label, file, lang] = files[i];
-    pane.innerHTML = '<div class="empty">laedt…</div>';
+    pane.innerHTML = '<div class="empty">loading…</div>';
     let text;
     try {
       const r = await fetch(base + '/' + file);
       if (!r.ok) throw new Error('HTTP ' + r.status);
       text = await r.text();
     } catch (e) {
-      pane.innerHTML = '<div class="pnote bad">' + esc(label) + ' nicht verfuegbar: ' + esc(e.message) + '</div>';
+      pane.innerHTML = '<div class="pnote bad">' + esc(label) + ' not available: ' + esc(e.message) + '</div>';
       return;
     }
     pane.innerHTML = '';
 
     const bar = el('div', 'codebar');
-    const copy = el('button', 'ghost', 'Kopieren');
+    const copy = el('button', 'ghost', 'Copy');
     copy.onclick = async () => {
-      try { await navigator.clipboard.writeText(text); copy.textContent = 'kopiert ✓'; setTimeout(() => { copy.textContent = 'Kopieren'; }, 1400); }
-      catch { copy.textContent = 'Zwischenablage gesperrt'; }
+      try { await navigator.clipboard.writeText(text); copy.textContent = 'copied ✓'; setTimeout(() => { copy.textContent = 'Copy'; }, 1400); }
+      catch { copy.textContent = 'clipboard blocked'; }
     };
     const down = el('a', 'ghostlink', 'Download');
     down.href = base + '/' + file; down.download = file.split('/').pop();
-    bar.append(copy, down, el('span', 'muted', file + ' · ' + text.length + ' Zeichen'));
+    bar.append(copy, down, el('span', 'muted', file + ' · ' + text.length + ' characters'));
 
     const pre = el('pre', 'code');
     pre.innerHTML = highlight(text.slice(0, 200000), lang);
@@ -585,47 +584,47 @@ const renderCode = async m => {
     tabs.append(b);
   }
 
-  // Was woher kommt — der wichtigste Satz auf dieser Seite.
+  // What comes from where — the most important sentence on this page.
   const missing = el('div', 'notes');
-  missing.append(el('div', 'bad', '· Isoliert = Original-Markup und Original-CSS der Quellseite. Analyseergebnis, nicht veroeffentlichen.'));
+  missing.append(el('div', 'bad', '· Isolated = the source page\'s original markup and original CSS. Analysis result, do not publish.'));
   if (m.code.rebuilt)
-    missing.append(el('div', 'ok', '· Nachbau, React und Svelte = aus der Messung geschrieben, ohne das CSS der Quellseite. Eigenstaendig.'));
+    missing.append(el('div', 'ok', '· Rebuild, React and Svelte = written from the measurement, without the source page\'s CSS. Independent.'));
   else
-    missing.append(el('div', 'limit', '· Fuer dieses Ziel gibt es keinen Nachbau — siehe Tab "Warum kein Nachbau".'));
-  if (m.assets.length) missing.append(el('div', 'bad', '· ' + m.assets.length + ' fremde Assets werden nur verlinkt, nicht mitgeliefert'));
-  if (m.fonts.length) missing.append(el('div', 'bad', '· Schriften der Quellseite — Lizenz vor jeder Weiterverwendung pruefen'));
+    missing.append(el('div', 'limit', '· There is no rebuild for this target — see the "Why no rebuild" tab.'));
+  if (m.assets.length) missing.append(el('div', 'bad', '· ' + m.assets.length + ' third-party assets are only linked, not shipped'));
+  if (m.fonts.length) missing.append(el('div', 'bad', '· the source page\'s fonts — check the licence before any reuse'));
 
   box.append(tabs, pane, missing);
   $('code').innerHTML = '';
   $('code').append(box);
-  $('code-c').textContent = m.code.cssRules + ' CSS-Regeln';
+  $('code-c').textContent = m.code.cssRules + ' CSS rules';
   await show(0);
 };
 
-// ── Results: alles, was schon extrahiert wurde ──────────────────────────────
-// Der eigene Ergebnisbereich von parity. Jede Extraktion bleibt hier liegen,
-// laesst sich wieder oeffnen und einzeln exportieren — ohne fremdes Projekt.
-let listFilter = 'alle';
+// ── Results: everything already extracted ───────────────────────────────────
+// parity's own results area. Every extraction stays here, can be reopened and
+// exported individually — without another project.
+let listFilter = 'all';
 
 export const loadList = async () => {
   let list = [];
   try { list = await (await fetch('/api/extractions')).json(); } catch { return; }
-  $('list-c').textContent = list.length ? list.length + ' gespeichert' : '';
+  $('list-c').textContent = list.length ? list.length + ' saved' : '';
   if (!list.length) {
-    $('list').innerHTML = '<div class="empty">Noch nichts extrahiert. Oben eine Seite oeffnen, ein Element anklicken, Analyse starten.</div>';
+    $('list').innerHTML = '<div class="empty">Nothing extracted yet. Open a page above, click an element, start the analysis.</div>';
     return;
   }
 
   const box = el('div');
 
-  // Filter nach Isolierbarkeit — das ist die Unterscheidung, die zaehlt:
-  // was laesst sich weiterverwenden, was ist nur dokumentiert.
-  const counts = { alle: list.length };
+  // Filter by isolatability — that is the distinction that counts: what can be
+  // reused, what is only documented.
+  const counts = { all: list.length };
   for (const x of list) counts[x.isolatability] = (counts[x.isolatability] || 0) + 1;
   const chips = el('div', 'chips');
-  for (const key of ['alle', 'isolatable', 'partial', 'reference-only', 'not-analysable']) {
-    if (key !== 'alle' && !counts[key]) continue;
-    const b = el('button', null, (key === 'alle' ? 'Alle' : ISO_LABEL[key]?.[0] || key) + ' · ' + (counts[key] || 0));
+  for (const key of ['all', 'isolatable', 'partial', 'reference-only', 'not-analysable']) {
+    if (key !== 'all' && !counts[key]) continue;
+    const b = el('button', null, (key === 'all' ? 'All' : ISO_LABEL[key]?.[0] || key) + ' · ' + (counts[key] || 0));
     b.setAttribute('aria-pressed', String(key === listFilter));
     b.onclick = () => { listFilter = key; loadList(); };
     chips.append(b);
@@ -633,7 +632,7 @@ export const loadList = async () => {
   box.append(chips);
 
   const grid = el('div', 'results');
-  const shown = list.filter(x => listFilter === 'alle' || x.isolatability === listFilter);
+  const shown = list.filter(x => listFilter === 'all' || x.isolatability === listFilter);
 
   for (const x of shown) {
     const card = el('article', 'result');
@@ -647,11 +646,11 @@ export const loadList = async () => {
       img.alt = '';
       img.loading = 'lazy';
       thumb.append(img);
-    } else thumb.append(el('span', 'muted', 'keine Aufnahme'));
-    // Die Kachel zeigt den Nachbau, wenn es ihn gibt — sonst muss dranstehen,
-    // dass hier Original-Code zu sehen ist.
+    } else thumb.append(el('span', 'muted', 'no capture'));
+    // The tile shows the rebuild if there is one — otherwise it has to say
+    // that original code is shown here.
     thumb.append(el('span', 'rbadge ' + (x.previews?.rebuilt ? 'ok' : 'limit'),
-      x.previews?.rebuilt ? 'Nachbau' : x.previews?.isolated ? 'isoliert' : 'original'));
+      x.previews?.rebuilt ? 'rebuild' : x.previews?.isolated ? 'isolated' : 'original'));
     card.append(thumb);
 
     const body = el('div', 'rbody');
@@ -665,7 +664,7 @@ export const loadList = async () => {
     const [isoText, isoCls] = ISO_LABEL[x.isolatability] || [x.isolatability, ''];
     meta.append(el('span', isoCls, isoText));
     meta.append(el('span', x.confidence >= .8 ? 'ok' : x.confidence >= .5 ? 'limit' : 'bad', 'Confidence ' + x.confidence));
-    if (x.warnings) meta.append(el('span', 'limit', x.warnings + ' Hinweise'));
+    if (x.warnings) meta.append(el('span', 'limit', x.warnings + ' notes'));
     body.append(meta);
 
     try {
@@ -673,7 +672,7 @@ export const loadList = async () => {
     } catch { body.append(el('div', 'rsrc', x.source)); }
 
     const actions = el('div', 'ractions');
-    const open = el('button', 'ghost', 'Oeffnen');
+    const open = el('button', 'ghost', 'Open');
     open.onclick = () => { showResult(b); $('sec-info').scrollIntoView({ behavior: 'smooth', block: 'start' }); };
     actions.append(open);
     const link = (file, label) => {
@@ -683,7 +682,7 @@ export const loadList = async () => {
     };
     if (x.code?.zip) actions.append(link(x.code.zip, 'ZIP'));
     if (x.previews?.video) actions.append(link(x.previews.video, 'Video'));
-    if (x.code?.single) actions.append(link(x.code.single, 'Einzeldatei'));
+    if (x.code?.single) actions.append(link(x.code.single, 'Single file'));
     body.append(actions);
 
     card.append(body);
@@ -699,7 +698,7 @@ const showResult = async base => {
   state.base = base;
   let m;
   try { m = await (await fetch(base + '/metadata.json?t=' + Date.now())).json(); }
-  catch (e) { $('info').innerHTML = '<div class="pnote bad">metadata.json nicht lesbar: ' + esc(String(e)) + '</div>'; return; }
+  catch (e) { $('info').innerHTML = '<div class="pnote bad">metadata.json not readable: ' + esc(String(e)) + '</div>'; return; }
   state.meta = m;
   previewTab = m.code.rebuilt ? 'rebuilt' : m.previews.isolated ? 'isolated' : 'original';
   renderInfo(m);
@@ -708,11 +707,11 @@ const showResult = async base => {
   loadList();
 };
 
-// ── Ereignisstrom ───────────────────────────────────────────────────────────
+// ── Event stream ────────────────────────────────────────────────────────────
 export const handle = e => {
   switch (e.ev) {
     case 'inspect':
-      if (e.status === 'start') { $('pick-c').textContent = 'HTML wird geholt…'; }
+      if (e.status === 'start') { $('pick-c').textContent = 'fetching HTML…'; }
       if (e.status === 'ready') {
         $('inspect-empty').hidden = true;
         $('stage').hidden = false;
@@ -721,13 +720,13 @@ export const handle = e => {
         f.onload = () => wireFrame();
         f.src = e.frame + '?t=' + Date.now();
       }
-      if (e.status === 'error') $('inspect-empty').textContent = 'Seite konnte nicht geoeffnet werden.';
+      if (e.status === 'error') $('inspect-empty').textContent = 'The page could not be opened.';
       break;
 
     case 'extract':
-      if (e.status === 'start') { resetSteps(); $('info-c').textContent = 'laeuft'; }
+      if (e.status === 'start') { resetSteps(); $('info-c').textContent = 'running'; }
       if (e.status === 'end')   { $('analyse').disabled = false; showResult(e.out); }
-      if (e.status === 'error') { $('analyse').disabled = false; $('info').innerHTML = '<div class="pnote bad">Analyse fehlgeschlagen — siehe Meldungen unten.</div>'; }
+      if (e.status === 'error') { $('analyse').disabled = false; $('info').innerHTML = '<div class="pnote bad">Analysis failed — see the messages below.</div>'; }
       break;
 
     case 'step': {
@@ -736,9 +735,9 @@ export const handle = e => {
       b.dataset.s = 'done';
       const v = b.querySelector('.v');
       v.textContent =
-        e.name === 'element' ? e.count + ' Treffer'
-        : e.name === 'css' ? e.rules + ' Regeln'
-        : e.name === 'js' ? (e.libs?.length ? e.libs.join(',') : e.listeners + ' Listener')
+        e.name === 'element' ? e.count + ' matches'
+        : e.name === 'css' ? e.rules + ' rules'
+        : e.name === 'js' ? (e.libs?.length ? e.libs.join(',') : e.listeners + ' listeners')
         : e.name === 'trigger' ? e.trigger
         : e.name === 'animation' ? (e.duration != null ? e.duration + 'ms' : (e.properties?.length ? e.properties.length + ' Props' : '—'))
         : e.name === 'isolatability' ? e.level

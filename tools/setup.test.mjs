@@ -1,18 +1,18 @@
-// Selbsttest fuer die Tastaturauswahl der Einrichtung.
+// Self-test for setup's keyboard selection.
 //   node tools/setup.test.mjs
 //
-// Die Auswahl laesst sich nur mit echtem Terminal von Hand pruefen. Hier wird
-// stdin und stdout untergeschoben, damit Umlauf, Bestaetigen, Abbrechen und
-// die Zahl der neu gezeichneten Zeilen trotzdem nachweisbar sind.
+// The selection can only be checked by hand in a real terminal. Here stdin and
+// stdout are swapped out so wrap-around, confirm, cancel and the number of
+// redrawn lines can still be proven.
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { select, skillInstalled } from './setup.mjs';
 
-const OPTS = [{ label: 'CLI und Oberfläche', hint: 'a' }, { label: 'Nur CLI', hint: 'b' }];
+const OPTS = [{ label: 'CLI and interface', hint: 'a' }, { label: 'CLI only', hint: 'b' }];
 
 const realIn = process.stdin, realWrite = process.stdout.write.bind(process.stdout);
 
-// Eine Auswahl durchspielen und zurueckgeben, was sie liefert und was sie malt.
+// Play through a selection and return what it yields and what it draws.
 const run = async keys => {
   const fake = new EventEmitter();
   Object.assign(fake, {
@@ -34,35 +34,35 @@ const run = async keys => {
 
 const UP = '\x1b[A', DOWN = '\x1b[B', ENTER = '\r', ESC = '\x1b';
 
-// Direkt bestaetigen nimmt die erste Option.
+// Confirming straight away takes the first option.
 assert.equal((await run([ENTER])).value, 0);
 
-// Eins runter, dann bestaetigen.
+// One down, then confirm.
 assert.equal((await run([DOWN, ENTER])).value, 1);
 
-// Runter und wieder hoch landet wieder oben.
+// Down and back up lands at the top again.
 assert.equal((await run([DOWN, UP, ENTER])).value, 0);
 
-// Hoch von der ersten Option laeuft ans Ende um, nicht ins Negative.
+// Up from the first option wraps to the end, not into negatives.
 assert.equal((await run([UP, ENTER])).value, OPTS.length - 1);
 
-// Zweimal runter bei zwei Optionen ist wieder die erste.
+// Down twice with two options is the first one again.
 assert.equal((await run([DOWN, DOWN, ENTER])).value, 0);
 
-// esc und Strg-C brechen ab, ohne etwas auszuwaehlen.
+// esc and Ctrl-C cancel without selecting anything.
 assert.equal((await run([ESC])).value, -1);
 assert.equal((await run(['\x03'])).value, -1);
 
-// Der Cursor muss beim Neuzeichnen genau so viele Zeilen hoch, wie gemalt
-// wurden — sonst wandert die Liste bei jedem Tastendruck durchs Bild.
+// On redraw the cursor must move up exactly as many lines as were drawn —
+// otherwise the list wanders down the screen on every keypress.
 const { buf } = await run([DOWN, ENTER]);
 const up = Number(buf.match(/\x1b\[(\d+)A/)[1]);
 const drawn = buf.split('\x1b[' + up + 'A')[0].split('\n').length - 1;
-assert.equal(up, drawn, `Cursor faehrt ${up} Zeilen hoch, gezeichnet wurden ${drawn}`);
+assert.equal(up, drawn, `cursor moves up ${up} lines, ${drawn} were drawn`);
 
-// Die Skill-Erkennung liest fremde Verzeichnisse, die es nicht geben muss.
-// Sie darf deshalb nie werfen, sondern beantwortet die Frage mit ja oder nein.
+// Skill detection reads foreign directories that need not exist.
+// So it must never throw; it answers the question with yes or no.
 assert.equal(typeof skillInstalled(), 'boolean');
 
-console.log('✓ Auswahl: 8 Prüfungen bestanden');
-console.log('✓ Skill-Erkennung: antwortet ohne zu werfen');
+console.log('✓ Selection: 8 checks passed');
+console.log('✓ Skill detection: answers without throwing');

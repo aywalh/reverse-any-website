@@ -5,14 +5,19 @@
   "type": "module",
   "license": "MIT",
   "author": "aywalh",
+  "homepage": "https://reverse-any-website.vercel.app",
+  "repository": { "type": "git", "url": "git+https://github.com/aywalh/reverse-any-website.git" },
+  "bugs": "https://github.com/aywalh/reverse-any-website/issues",
   "bin": { "parity": "bin/parity.mjs" },
   "files": ["bin", "tools", "ui", "skills", ".claude-plugin", "README.md", "PROMPT.md", "NOTICE.md", "LICENSE"],
   "keywords": [
-    "website-clone", "web-scraping", "playwright", "webgl", "frontend",
+    "reverse-any-website", "website-clone", "clone-website", "copy-animation",
+    "claude-code", "claude-skill", "ai-agent", "gsap", "web-scraping", "playwright", "webgl", "frontend",
     "reverse-engineering", "visual-regression", "verification", "three.js", "rive"
   ],
   "engines": { "node": ">=18" },
   "scripts": {
+    "test": "node --test tools/setup.test.mjs tests/extract.test.mjs",
     "capture": "node tools/capture.mjs",
     "fetch": "node tools/fetch-assets.mjs",
     "serve": "node tools/serve.mjs",

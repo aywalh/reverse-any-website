@@ -92,10 +92,10 @@ if (va && vb && va.initial.nodes !== undefined && vb.initial.nodes !== undefined
   const blank = r => r.initial.nodes < 60 && r.initial.textLength < 40
                   && r.initial.canvases.length === 0 && r.initial.imagesTotal === 0;
   const [ba, bb] = [blank(va), blank(vb)];
-  if (ba && bb) emptyNote = 'beide Seiten haben nichts gerendert → der Lauf beweist nichts';
+  if (ba && bb) emptyNote = 'neither side rendered anything → the run proves nothing';
   else if (ba !== bb) { checked++; mismatches++;
-    rows.push({ label: 'page rendered', a: ba ? 'nichts' : 'ja', b: bb ? 'nichts' : 'ja', same: false });
-    emit({ ev: 'row', kind: 'diff', label: 'page rendered', source: ba ? 'nichts' : 'ja', clone: bb ? 'nichts' : 'ja', match: false });
+    rows.push({ label: 'page rendered', a: ba ? 'nothing' : 'yes', b: bb ? 'nothing' : 'yes', same: false });
+    emit({ ev: 'row', kind: 'diff', label: 'page rendered', source: ba ? 'nothing' : 'yes', clone: bb ? 'nothing' : 'yes', match: false });
   }
 }
 
@@ -108,15 +108,15 @@ if (ia && ib) {
   const mapB = new Map(ib.results.map(r => [r.name, r]));
   for (const [name, ra] of mapA) {
     const rb = mapB.get(name);
-    if (!rb) { stepNotes.push({ name, note: 'nur in Quelle vorhanden', bad: true }); mismatches++; continue; }
+    if (!rb) { stepNotes.push({ name, note: 'only present in source', bad: true }); mismatches++; continue; }
     if (ra.ok !== rb.ok) {
-      stepNotes.push({ name, note: `Quelle ${ra.ok ? 'ok' : 'fail'} · Clone ${rb.ok ? 'ok' : 'fail'}`, bad: true });
+      stepNotes.push({ name, note: `source ${ra.ok ? 'ok' : 'fail'} · clone ${rb.ok ? 'ok' : 'fail'}`, bad: true });
       mismatches++;
     } else if (!ra.ok && !rb.ok) {
       // Same failure on both sides = harness limit, not a clone defect.
-      stepNotes.push({ name, note: 'auf beiden Seiten fehlgeschlagen → Grenze des Messverfahrens', bad: false });
+      stepNotes.push({ name, note: 'failed on both sides → limit of the measurement', bad: false });
     } else if (!eq(ra.value, rb.value)) {
-      stepNotes.push({ name, note: `Wert weicht ab: ${fmt(ra.value).slice(0, 60)} vs ${fmt(rb.value).slice(0, 60)}`, bad: null });
+      stepNotes.push({ name, note: `value differs: ${fmt(ra.value).slice(0, 60)} vs ${fmt(rb.value).slice(0, 60)}`, bad: null });
     }
   }
 }
@@ -128,31 +128,31 @@ if (ra_ && rb_) {
   const byW = new Map(rb_.rows.map(r => [r.w, r]));
   for (const row of ra_.rows) {
     const o = byW.get(row.w);
-    if (!o) { respBad.push(`${row.w}px fehlt im Clone-Lauf`); continue; }
+    if (!o) { respBad.push(`${row.w}px missing from the clone run`); continue; }
     if (row.scrollHeight !== o.scrollHeight) respBad.push(`${row.w}px: scrollHeight ${row.scrollHeight} vs ${o.scrollHeight}`);
-    if (row.desktopNav !== o.desktopNav || row.burger !== o.burger) respBad.push(`${row.w}px: Nav-Modus weicht ab`);
-    if (o.overflowX > 0) respBad.push(`${row.w}px: Clone hat ${o.overflowX}px horizontalen Overflow`);
+    if (row.desktopNav !== o.desktopNav || row.burger !== o.burger) respBad.push(`${row.w}px: nav mode differs`);
+    if (o.overflowX > 0) respBad.push(`${row.w}px: clone has ${o.overflowX}px horizontal overflow`);
   }
   checked++;
   if (respBad.length) mismatches++;
-  rows.push({ label: `responsive (${ra_.rows.length} Breiten)`, a: `${ra_.rows.length} gemessen`,
-              b: respBad.length ? `${respBad.length} Abweichungen` : 'alle identisch', same: !respBad.length });
-  emit({ ev: 'row', kind: 'diff', label: `responsive (${ra_.rows.length} Breiten)`,
-         source: `${ra_.rows.length} gemessen`, clone: respBad.length ? `${respBad.length} Abweichungen` : 'alle identisch',
+  rows.push({ label: `responsive (${ra_.rows.length} widths)`, a: `${ra_.rows.length} measured`,
+              b: respBad.length ? `${respBad.length} differences` : 'all identical', same: !respBad.length });
+  emit({ ev: 'row', kind: 'diff', label: `responsive (${ra_.rows.length} widths)`,
+         source: `${ra_.rows.length} measured`, clone: respBad.length ? `${respBad.length} differences` : 'all identical',
          match: !respBad.length, detail: respBad });
 }
 
 // ── output ────────────────────────────────────────────────────────────────
 if (!rows.length) {
-  console.error(`Keine vergleichbaren Reports in ${A} und ${B} gefunden.`);
-  console.error('Erwartet: VERIFY.json, INTERACTIONS.json oder RESPONSIVE.json in beiden Verzeichnissen.');
+  console.error(`No comparable reports found in ${A} and ${B}.`);
+  console.error('Expected: VERIFY.json, INTERACTIONS.json or RESPONSIVE.json in both directories.');
   process.exit(2);
 }
 
 const w = Math.max(...rows.map(r => r.label.length), 12);
 const wa = Math.max(...rows.map(r => r.a.length), 6, A.length);
-console.log(`\n${D}Quelle:${X} ${A}\n${D}Clone: ${X} ${B}\n`);
-console.log(`  ${'Metrik'.padEnd(w)}  ${'Quelle'.padEnd(wa)}  Clone`);
+console.log(`\n${D}Source:${X} ${A}\n${D}Clone: ${X} ${B}\n`);
+console.log(`  ${'Metric'.padEnd(w)}  ${'Source'.padEnd(wa)}  Clone`);
 console.log(`  ${'─'.repeat(w)}  ${'─'.repeat(wa)}  ${'─'.repeat(20)}`);
 for (const r of rows) {
   const mark = r.same ? `${G}✓${X}` : `${R}✗${X}`;
@@ -161,22 +161,22 @@ for (const r of rows) {
 }
 
 if (offOrigin) {
-  const note = `Quelle ${offOrigin.source} · Clone ${offOrigin.clone} — ${offOrigin.hosts.join(', ')}`;
+  const note = `source ${offOrigin.source} · clone ${offOrigin.clone} — ${offOrigin.hosts.join(', ')}`;
   emit({ ev: 'note', kind: 'offOrigin', name: 'off-origin requests', note, bad: false });
   console.log(`
-  ${D}Off-Origin-Requests (nicht gewertet):${X} ${note}`);
+  ${D}Off-origin requests (not counted):${X} ${note}`);
 }
 
 for (const s of stepNotes) emit({ ev: 'note', kind: 'step', name: s.name, note: s.note, bad: s.bad });
 if (stepNotes.length) {
-  console.log(`\n  ${D}Interaktionsschritte:${X}`);
+  console.log(`\n  ${D}Interaction steps:${X}`);
   for (const s of stepNotes) {
     const c = s.bad === true ? R : s.bad === false ? Y : D;
     console.log(`  ${c}·${X} ${s.name}: ${c}${s.note}${X}`);
   }
 }
 if (respBad.length) {
-  console.log(`\n  ${R}Responsive-Abweichungen:${X}`);
+  console.log(`\n  ${R}Responsive differences:${X}`);
   respBad.slice(0, 20).forEach(s => console.log(`  · ${s}`));
 }
 
@@ -188,11 +188,11 @@ if (emptyNote) {
 
 const ok = mismatches === 0 && !emptyNote;
 emit({ ev: 'done', cmd: 'diff', ok, mismatches, checked, exit: ok ? 0 : 1 });
-const verdict = ok ? '✓ Parität erreicht'
-  : mismatches ? `✗ ${mismatches} von ${checked} Prüfungen weichen ab`
-  : '✗ Kein Ergebnis — es gab nichts zu vergleichen';
+const verdict = ok ? '✓ Parity reached'
+  : mismatches ? `✗ ${mismatches} of ${checked} checks differ`
+  : '✗ No result — there was nothing to compare';
 console.log(`
 ${ok ? G : R}${verdict}${X}`);
-if (ok) console.log(`${D}  Übereinstimmende Fehlschläge auf beiden Seiten zählen nicht als Defekt.${X}\n`);
+if (ok) console.log(`${D}  Matching failures on both sides do not count as a defect.${X}\n`);
 else console.log('');
 process.exit(ok ? 0 : 1);

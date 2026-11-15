@@ -1,7 +1,7 @@
 {
   "name": "parity",
   "short_name": "parity",
-  "description": "Zeigt live, wie ein Clone entsteht und gegen das Original geprueft wird.",
+  "description": "Shows live how a clone comes together and is checked against the original.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

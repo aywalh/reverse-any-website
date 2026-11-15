@@ -1,15 +1,15 @@
-// Export einer einzelnen Extraktion — alles, was parity ohne fremdes Projekt
-// aus einem Ergebnis herausgeben kann.
+// Export of a single extraction — everything parity can hand out of a result
+// without another project.
 //
 // Usage: node tools/export.mjs <extraction-dir> [--video] [--single] [--zip] [--all]
-//   --video    Aufnahme der Preview als .webm
-//   --single   eine eigenstaendige HTML-Datei, alles inline, laeuft per Doppelklick
-//   --zip      das ganze Verzeichnis als Archiv
-//   --all      alle drei (Vorgabe, wenn nichts angegeben ist)
+//   --video    recording of the preview as .webm
+//   --single   a standalone HTML file, everything inline, runs on double-click
+//   --zip      the whole directory as an archive
+//   --all      all three (default when nothing is given)
 //
-// Bewusst allgemeine Formate. Selective Extraction ist in parity vollstaendig
-// und haengt an keinem anderen Projekt — wer ein Ergebnis anderswohin bringen
-// will, nimmt ZIP, JSON, die Einzeldatei oder die Komponentendateien mit.
+// Deliberately generic formats. Selective extraction is complete within parity
+// and depends on no other project — whoever wants to take a result elsewhere
+// takes the ZIP, the JSON, the single file or the component files.
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync, rmSync, copyFileSync } from 'node:fs';
 import { join, relative, sep, basename } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -28,28 +28,27 @@ const picked = ['video', 'single', 'zip'].filter(f => argv.includes('--' + f));
 const WANT = new Set(argv.includes('--all') || !picked.length ? ['video', 'single', 'zip'] : picked);
 
 const metaPath = join(DIR, 'metadata.json');
-if (!existsSync(metaPath)) { console.error(`✗ ${metaPath} nicht gefunden`); process.exit(1); }
+if (!existsSync(metaPath)) { console.error(`✗ ${metaPath} not found`); process.exit(1); }
 const m = JSON.parse(readFileSync(metaPath, 'utf8'));
 const SLUG = m.slug || basename(DIR);
 
-// Welche Fassung gezeigt wird: der eigene Nachbau, wenn es ihn gibt. Sonst die
-// isolierte — dann ist im Video Original-Code zu sehen, und das steht auch dran.
+// Which version is shown: the independent rebuild if there is one. Otherwise the
+// isolated one — then the video shows original code, and it says so.
 const useRebuilt = !!m.code?.rebuilt && existsSync(join(DIR, 'rebuilt/index.html'));
 const previewDir = useRebuilt ? 'rebuilt' : 'vanilla';
 const previewPage = join(DIR, previewDir, 'index.html');
 
-// Bei einer WebGL- oder Canvas-Szene ist die isolierte Fassung ein leeres
-// Rechteck: der Inhalt entsteht aus JS, das hier nicht mitlaeuft. Ein Video
-// davon zeigt nichts. Aufgenommen wird dann die Originalseite, auf das Ziel
-// ausgerichtet — dokumentierbar bleibt es dadurch trotzdem, und genau das ist
-// bei "nur als Referenz" der Sinn.
+// For a WebGL or canvas scene the isolated version is an empty rectangle: the
+// content comes from JS that does not run here. A video of it shows nothing.
+// So the original page is recorded instead, aligned to the target — it stays
+// documentable that way, which is exactly the point of "reference only".
 const recordSource = !useRebuilt && m.isolatability === 'reference-only';
 
 const done = {};
 
 // ── Video ───────────────────────────────────────────────────────────────────
-// Playwright nimmt selbst auf; ein zusaetzliches Werkzeug waere hier eine
-// Abhaengigkeit fuer etwas, das schon im Haus ist.
+// Playwright records by itself; an extra tool would be a dependency for
+// something already in the house.
 if (WANT.has('video') && (recordSource || existsSync(previewPage))) {
   const { chromium } = await import('playwright');
   const tmp = join(tmpdir(), 'parity-video-' + Date.now());
@@ -64,8 +63,8 @@ if (WANT.has('video') && (recordSource || existsSync(previewPage))) {
     const page = await ctx.newPage();
 
     if (recordSource) {
-      // Die Originalseite, auf das Ziel ausgerichtet. Eine WebGL-Szene braucht
-      // deutlich laenger, bis sie steht — Modelle, Texturen, Decoder.
+      // The original page, aligned to the target. A WebGL scene takes much
+      // longer to settle — models, textures, decoders.
       await page.goto(m.source, { waitUntil: 'domcontentloaded', timeout: 90000 });
       await page.waitForLoadState('networkidle', { timeout: 60000 }).catch(() => {});
       await page.waitForTimeout(9000);
@@ -79,13 +78,13 @@ if (WANT.has('video') && (recordSource || existsSync(previewPage))) {
     const dur = Math.min(2500, (m.timing?.durationMs ?? 600) + 600);
     const target = recordSource ? m.selector : useRebuilt ? '.' + (m.rebuild?.root || SLUG) : '#parity-stage';
 
-    // Dreimal, damit die Bewegung im Video als Bewegung lesbar ist und nicht
-    // als einmaliges Zucken am Anfang.
+    // Three times, so the motion reads as motion in the video and not as a
+    // single twitch at the start.
     const rounds = recordSource ? 3 : 3;
     for (let i = 0; i < rounds; i++) {
       if (recordSource) {
-        // Auf der echten Seite gibt es keine Fernsteuerung — der Trigger muss
-        // mit Maus und Tastatur ausgeloest werden wie von Hand.
+        // The real page has no remote control — the trigger has to be fired
+        // with mouse and keyboard as if by hand.
         const box = await page.locator(target).first().boundingBox().catch(() => null);
         const cx = box ? box.x + box.width / 2 : size.width / 2;
         const cy = box ? box.y + box.height / 2 : size.height / 2;
@@ -104,7 +103,7 @@ if (WANT.has('video') && (recordSource || existsSync(previewPage))) {
         }
         await page.waitForTimeout(2200);
       } else if (trigger === 'hover') {
-        // Echter Mauszeiger: CSS :hover reagiert nicht auf ein synthetisches Event.
+        // Real mouse pointer: CSS :hover does not react to a synthetic event.
         await page.mouse.move(2, 2);
         await page.waitForTimeout(400);
         await page.locator(target).first().hover({ timeout: 4000, force: true }).catch(() => {});
@@ -115,7 +114,7 @@ if (WANT.has('video') && (recordSource || existsSync(previewPage))) {
         await page.evaluate(() => window.parityPreview?.fire?.()).catch(() => {});
         await page.waitForTimeout(dur);
       }
-      if (m.timing?.loops && !recordSource) break;   // eine Schleife wiederholt sich selbst
+      if (m.timing?.loops && !recordSource) break;   // a loop repeats itself
     }
     await page.waitForTimeout(500);
     await ctx.close();
@@ -129,7 +128,7 @@ if (WANT.has('video') && (recordSource || existsSync(previewPage))) {
       emit({ ev: 'shot', cmd: 'export', mark: 'preview-video', path: join(DIR, 'preview.webm') });
     }
   } catch (e) {
-    console.error('  Video fehlgeschlagen: ' + String(e).slice(0, 140));
+    console.error('  Video failed: ' + String(e).slice(0, 140));
   } finally {
     await ctx?.close().catch(() => {});
     await browser.close().catch(() => {});
@@ -137,9 +136,9 @@ if (WANT.has('video') && (recordSource || existsSync(previewPage))) {
   }
 }
 
-// ── Eigenstaendige Einzeldatei ──────────────────────────────────────────────
-// CSS und JS hinein, damit die Datei allein lauffaehig ist. Genau dafuer wollen
-// Leute eine Einzeldatei: anhaengen, weitergeben, doppelklicken.
+// ── Standalone single file ──────────────────────────────────────────────────
+// Inline the CSS and JS so the file runs on its own. That is exactly why people
+// want a single file: attach it, pass it on, double-click it.
 if (WANT.has('single') && existsSync(previewPage)) {
   let html = readFileSync(previewPage, 'utf8');
   const inline = (file, open, close) => {
@@ -152,10 +151,10 @@ if (WANT.has('single') && existsSync(previewPage)) {
     .replace(/<script src="script\.js"><\/script>/, inline('script.js', '<script>', '<\/script>'));
 
   const banner = `<!--
-  ${m.title} — von parity aus ${m.source} gemessen.
+  ${m.title} — measured by parity from ${m.source}.
   ${useRebuilt
-    ? 'Eigenstaendiger Nachbau: aus der Messung geschrieben, ohne das CSS der Quellseite.'
-    : 'ACHTUNG: isolierte Fassung mit ORIGINAL-Code der Quellseite. Analyseergebnis,\n  keine eigene Komponente — nicht veroeffentlichen.'}
+    ? 'Independent rebuild: written from the measurement, without the source page\'s CSS.'
+    : 'WARNING: isolated version with the source page\'s ORIGINAL code. Analysis result,\n  not a component of yours — do not publish.'}
   Trigger ${(m.triggers || [])[0]} · ${m.timing?.durationMs ?? '—'}ms · ${(m.easing || [])[0] ?? '—'}
 -->
 `;
@@ -171,8 +170,8 @@ if (WANT.has('zip')) {
   const walk = (d, base = '') => {
     const out = [];
     for (const e of readdirSync(d)) {
-      // Ein Archiv, das sich selbst enthaelt, waere je nach Reihenfolge halb
-      // oder gar nicht drin — und in keinem Fall das, was jemand erwartet.
+      // An archive containing itself would be half in or not in at all,
+      // depending on order — and in no case what anyone expects.
       if (e === zipName) continue;
       const p = join(d, e);
       if (statSync(p).isDirectory()) out.push(...walk(p, base + e + '/'));
@@ -180,33 +179,33 @@ if (WANT.has('zip')) {
     }
     return out;
   };
-  // metadata.json zuletzt schreiben, deshalb hier schon den aktuellen Stand
-  // hineinlegen statt den Stand von vor dem Video.
+  // metadata.json is written last, so put the current state in here already
+  // rather than the state from before the video.
   const files = walk(DIR).filter(f => f.name !== 'metadata.json');
   files.unshift({ name: 'metadata.json', data: JSON.stringify(m, null, 2) });
   files.push({ name: 'LIESMICH.txt', data:
 `${m.title}
-Gemessen von parity aus ${m.source}
+Measured by parity from ${m.source}
 Selector: ${m.selector}
 Trigger:  ${(m.triggers || []).join(', ')}
-Dauer:    ${m.timing?.durationMs ?? '—'}ms (${m.timing?.durationSource ?? '—'})
-Einstufung: ${m.isolatability} (Confidence ${m.confidence})
+Duration: ${m.timing?.durationMs ?? '—'}ms (${m.timing?.durationSource ?? '—'})
+Grade:    ${m.isolatability} (confidence ${m.confidence})
 
-Was hier drin liegt
--------------------
-metadata.json   die vollstaendige Messung
-report.md       der lesbare Bericht
-vanilla/        ISOLIERT: Original-Markup und Original-CSS der Quellseite.
-                Analyseergebnis. Nicht veroeffentlichen.
-${m.code?.rebuilt ? `rebuilt/        NACHBAU: aus der Messung geschrieben, kennt das
-                Original-CSS nicht. Eigenstaendig.
-react/          derselbe Nachbau als React-Komponente
-svelte/         derselbe Nachbau als Svelte-Komponente
-` : `NOT-REBUILT.md  warum fuer dieses Ziel kein Nachbau erzeugt wurde
-`}preview-*.png   Aufnahmen zum Vergleich
-${done.video ? 'preview.webm    Aufnahme der Preview\n' : ''}${done.single ? done.single + '   alles in einer Datei, laeuft per Doppelklick\n' : ''}
-Fremde Assets und Schriften sind NICHT enthalten, nur verlinkt.
-Lizenzen vor jeder Weiterverwendung pruefen.
+What is in here
+---------------
+metadata.json   the complete measurement
+report.md       the readable report
+vanilla/        ISOLATED: the source page's original markup and original CSS.
+                Analysis result. Do not publish.
+${m.code?.rebuilt ? `rebuilt/        REBUILD: written from the measurement, does not know
+                the original CSS. Independent.
+react/          the same rebuild as a React component
+svelte/         the same rebuild as a Svelte component
+` : `NOT-REBUILT.md  why no rebuild was produced for this target
+`}preview-*.png   captures for comparison
+${done.video ? 'preview.webm    recording of the preview\n' : ''}${done.single ? done.single + '   everything in one file, runs on double-click\n' : ''}
+Third-party assets and fonts are NOT included, only linked.
+Check licences before any reuse.
 ` });
 
   writeFileSync(join(DIR, zipName), zip(files));
@@ -219,6 +218,6 @@ writeFileSync(metaPath, JSON.stringify(m, null, 2), 'utf8');
 emit({ ev: 'done', cmd: 'export', out: DIR, ...done, shows: previewDir, exit: 0 });
 console.log(`✓ ${DIR}`);
 for (const [k, v] of Object.entries(done)) console.log(`  ${k.padEnd(7)} ${v}`);
-if (!Object.keys(done).length) console.log('  nichts erzeugt — fehlt die Preview?');
-else if (recordSource) console.log('  Hinweis: Video von der ORIGINALSEITE — die isolierte Fassung waere ein leerer Canvas.');
- else if (!useRebuilt) console.log('  Hinweis: zeigt die ISOLIERTE Fassung (Original-Code) — es gibt keinen Nachbau.');
+if (!Object.keys(done).length) console.log('  nothing produced — is the preview missing?');
+else if (recordSource) console.log('  Note: video of the ORIGINAL PAGE — the isolated version would be an empty canvas.');
+ else if (!useRebuilt) console.log('  Note: shows the ISOLATED version (original code) — there is no rebuild.');

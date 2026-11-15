@@ -5,11 +5,21 @@
 
 ![parity — the method in 45 seconds](media/parity-film.gif)
 
-<sub>**45 seconds**, captions burned in — the method end to end, and the counter-measurement that decides it. GitHub strips `<video>` from a README, so this is the film as an animated frame; the version with voice-over and sound plays on <a href="https://parity-ui.vercel.app/#film">parity-ui.vercel.app</a>.</sub>
+<sub>**45 seconds**, captions burned in — the method end to end, and the counter-measurement that decides it. GitHub strips `<video>` from a README, so this is the film as an animated frame; the version with voice-over and sound plays on <a href="https://reverse-any-website.vercel.app/#film">reverse-any-website.vercel.app</a>.</sub>
 
-**Source-first frontend reconstruction with counter-measurement.**
+## Reverse any website. Prove it's 1:1.
 
-Every cloning tool claims fidelity. `parity` measures it.
+Whole pages or one single effect — a hover, a scroll reveal, a WebGL scene — rebuilt locally, then measured against the original. Works on Three.js, Rive, Lottie, GSAP and canvas sites.
+
+```bash
+git clone https://github.com/aywalh/reverse-any-website && cd reverse-any-website
+npm install && npx playwright install chromium
+node bin/parity.mjs ui        # paste a URL, watch it clone and measure
+```
+
+Using Claude Code? `/plugin marketplace add aywalh/reverse-any-website`, then `/plugin install parity@parity` and just say *"clone https://… and prove it"*.
+
+**Source-first frontend reconstruction with counter-measurement.** Every cloning tool claims fidelity. `parity` measures it.
 
 The idea is simple, and it is the reason this tool exists: **the same probes run against the original *and* against the clone.** A clone checked only against itself proves nothing. Only the difference between two identical measurement runs says anything — and, just as important, a failure on *both* sides is recognised as a limit of the measurement, not booked as a defect.
 

@@ -1,19 +1,19 @@
-// Rebuild — schreibt aus einer Messung eine eigenstaendige Fassung.
+// Rebuild — writes an independent version from a measurement.
 //
 // Usage: node tools/rebuild.mjs <extraction-dir> [--shot]
 //
-// Der Unterschied zu vanilla/ ist der ganze Punkt dieser Datei:
+// The difference from vanilla/ is the whole point of this file:
 //
-//   vanilla/  = Original-Markup und Original-CSS der Quellseite, ausgeschnitten.
-//               Ein Analyseergebnis. Darf nicht veroeffentlicht werden.
-//   rebuilt/  = neu geschriebener Code aus metadata.json. Kennt das Original-CSS
-//               nicht. Nur Messwerte: Dauer, Delay, Easing, Start-, Endzustand,
-//               Keyframe-Offsets, Kastenwerte — und eine Strukturbeschreibung
-//               (Tag, Rolle, Text), kein DOM-Abzug.
+//   vanilla/  = the source page's original markup and original CSS, cut out.
+//               An analysis result. Must not be published.
+//   rebuilt/  = newly written code from metadata.json. Does not know the
+//               original CSS. Only measured values: duration, delay, easing,
+//               start and end state, keyframe offsets, box values — and a
+//               structure description (tag, role, text), no DOM copy.
 //
-// Was sich nicht ehrlich nachbauen laesst, wird auch nicht nachgebaut: dann
-// entsteht NOT-REBUILT.md mit dem Grund. Ein Nachbau, der das Original als
-// eigene Arbeit ausgibt, waere schlimmer als gar keiner.
+// What cannot be rebuilt honestly is not rebuilt: NOT-REBUILT.md is written
+// with the reason instead. A rebuild that passes the original off as its own
+// work would be worse than none at all.
 import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'node:fs';
 import { join, resolve as resolvePath } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -28,52 +28,52 @@ if (!DIR) {
 }
 const metaPath = join(DIR, 'metadata.json');
 if (!existsSync(metaPath)) {
-  console.error(`✗ ${metaPath} nicht gefunden`);
+  console.error(`✗ ${metaPath} not found`);
   process.exit(1);
 }
 const m = JSON.parse(readFileSync(metaPath, 'utf8'));
 
-// ── Laesst sich das ehrlich nachbauen? ──────────────────────────────────────
+// ── Can this be rebuilt honestly? ───────────────────────────────────────────
 const blockers = [];
 if (m.isolatability === 'reference-only') {
-  // Der Grund der Einstufung, nicht die erstbeste Warnung. Schriftlizenzen sind
-  // ein Hinweis, aber nie der Grund, warum etwas nicht nachbaubar ist.
-  const why = m.isolatabilityReasons?.length ? m.isolatabilityReasons : ['die Runtime laesst sich nicht ausschneiden.'];
-  for (const r of why) blockers.push('Als "nur als Referenz dokumentierbar" eingestuft: ' + r);
+  // The reason for the grade, not the first warning that comes along. Font
+  // licences are a note, but never the reason something cannot be rebuilt.
+  const why = m.isolatabilityReasons?.length ? m.isolatabilityReasons : ['the runtime cannot be cut out.'];
+  for (const r of why) blockers.push('Graded "reference only": ' + r);
 }
 if (m.isolatability === 'not-analysable')
-  blockers.push('Das Ziel war nicht analysierbar.');
+  blockers.push('The target was not analysable.');
 if (!m.structure)
-  blockers.push('Keine Strukturbeschreibung in den Metadaten — mit einer aelteren Fassung von extract gemessen. Bitte neu messen.');
+  blockers.push('No structure description in the metadata — measured with an older version of extract. Please measure again.');
 if (m.techniques?.some(t => ['webgl', 'canvas', 'three', 'rive'].includes(t)))
-  blockers.push('Der Inhalt entsteht aus WebGL/Canvas/Rive. Was dort gezeichnet wird, steht in keiner CSS-Regel.');
+  blockers.push('The content comes from WebGL/canvas/Rive. What is drawn there is in no CSS rule.');
 
 const props = Object.keys(m.states || {});
 const kf = (m.timing?.keyframes || []).filter(k => k.offset != null);
 const hasMotion = props.length > 0 || kf.length > 1;
 if (!hasMotion && !blockers.length)
-  blockers.push('Beim gemessenen Trigger hat sich nichts veraendert — es gibt keine Bewegung zum Nachbauen. Die statische Fassung entsteht trotzdem.');
+  blockers.push('Nothing changed on the measured trigger — there is no motion to rebuild. The static version is produced anyway.');
 
-// Fehlende Bewegung blockiert nicht, sie schraenkt nur ein.
-const hardBlocked = blockers.some(b => !b.startsWith('Beim gemessenen Trigger'));
+// Missing motion does not block, it only limits.
+const hardBlocked = blockers.some(b => !b.startsWith('Nothing changed on the measured trigger'));
 
 if (hardBlocked) {
-  const md = `# Nicht nachgebaut
+  const md = `# Not rebuilt
 
-**${m.title}** — \`${m.selector}\` auf ${m.source}
+**${m.title}** — \`${m.selector}\` on ${m.source}
 
-Fuer dieses Ziel wird keine eigene Fassung erzeugt:
+No independent version is produced for this target:
 
 ${blockers.map(b => '- ' + b).join('\n')}
 
-Was es stattdessen gibt:
+What there is instead:
 
-- \`metadata.json\` — die vollstaendige Messung
-- \`report.md\` — der lesbare Bericht
-- \`vanilla/\` — die isolierte Fassung mit **Original-Code** der Quellseite.
-  Analyseergebnis, keine eigene Komponente. Nicht veroeffentlichen.
+- \`metadata.json\` — the complete measurement
+- \`report.md\` — the readable report
+- \`vanilla/\` — the isolated version with the source page's **original code**.
+  Analysis result, not a component of yours. Do not publish.
 
-Eine automatisch erzeugte Nachbildung waere hier geraten, nicht gemessen.
+An automatically generated replica would be guessed here, not measured.
 `;
   writeFileSync(join(DIR, 'NOT-REBUILT.md'), md, 'utf8');
   for (const d of ['rebuilt', 'react', 'svelte']) rmSync(join(DIR, d), { recursive: true, force: true });
@@ -82,14 +82,14 @@ Eine automatisch erzeugte Nachbildung waere hier geraten, nicht gemessen.
   if (m.status === 'rebuilt') m.status = 'isolated';
   writeFileSync(metaPath, JSON.stringify(m, null, 2), 'utf8');
   emit({ ev: 'done', cmd: 'rebuild', out: DIR, rebuilt: false, reasons: blockers, exit: 0 });
-  console.log(`— ${m.title}: nicht nachgebaut`);
+  console.log(`— ${m.title}: not rebuilt`);
   for (const b of blockers) console.log('  · ' + b);
   process.exit(0);
 }
 
-// ── Namen, die nichts kopieren ──────────────────────────────────────────────
-// Klassennamen der Quellseite zu uebernehmen waere Kopieren. Erlaubt ist nur
-// ein kleiner Satz allgemeiner Woerter — "title" gehoert niemandem.
+// ── Names that copy nothing ─────────────────────────────────────────────────
+// Taking over the source page's class names would be copying. Only a small set
+// of generic words is allowed — "title" belongs to nobody.
 const GENERIC = new Set(['title', 'label', 'text', 'body', 'icon', 'image', 'media', 'header',
   'footer', 'content', 'inner', 'wrap', 'wrapper', 'item', 'link', 'button', 'badge', 'meta', 'caption']);
 const ROOT = (m.slug || 'component').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'component';
@@ -131,9 +131,9 @@ const buildMarkup = (node, cls, depth, classAttr) => {
     : `${pad}<${tag} ${attrs.join(' ')}></${tag}>`;
 };
 
-// ── CSS aus den gemessenen Werten ───────────────────────────────────────────
-// Nur Werte, die etwas aussagen. Die Vorgabewerte des Browsers wieder
-// hinzuschreiben blaeht das Ergebnis auf und erklaert nichts.
+// ── CSS from the measured values ────────────────────────────────────────────
+// Only values that say something. Writing the browser defaults back out
+// bloats the result and explains nothing.
 const DEFAULT = {
   display: 'inline', 'flex-direction': 'row', 'align-items': 'normal', 'justify-content': 'normal',
   gap: 'normal', padding: '0px', margin: '0px', width: 'auto', height: 'auto', 'min-height': '0px',
@@ -143,17 +143,16 @@ const DEFAULT = {
   'text-decoration-line': 'none', opacity: '1', transform: 'none', overflow: 'visible',
   position: 'static', cursor: 'auto', 'white-space': 'normal',
 };
-// Groesse ist Layout, keine Komponenteneigenschaft. Die gemessene Breite eines
-// Block-Elements ist die Breite seines Elternteils bei 1440px Viewport — sie in
-// einen Nachbau zu schreiben friert das Layout einer fremden Seite ein und
-// macht die Komponente unbrauchbar. Uebernommen wird nur, was die Quellseite
-// selbst deklariert (z. B. ein 64px-Kreis).
+// Size is layout, not a component property. The measured width of a block
+// element is its parent's width at a 1440px viewport — writing it into a
+// rebuild freezes a foreign page's layout and makes the component unusable.
+// Only what the source page declares itself is taken over (e.g. a 64px circle).
 const LAYOUT_ONLY = new Set(['width', 'height', 'max-width', 'min-height', 'margin']);
 const declared = new Set(m.declaredBoxProps || []);
 const isLayoutNoise = k => LAYOUT_ONLY.has(k) && !declared.has(k);
 
-// display:block ist die Vorgabe fuer div/section/p — sie hinzuschreiben erklaert
-// nichts. Bei inline-Elementen, die zu block gemacht wurden, schon.
+// display:block is the default for div/section/p — writing it explains
+// nothing. For inline elements made into blocks, it does.
 const BLOCKISH = new Set(['div', 'section', 'article', 'header', 'footer', 'main', 'nav', 'p', 'h1', 'h2', 'h3', 'h4', 'ul', 'li', 'figure']);
 
 const meaningful = (k, v) => {
@@ -165,8 +164,8 @@ const meaningful = (k, v) => {
   return true;
 };
 
-// matrix(a,b,c,d,e,f) ist korrekt und unlesbar. Wer den Nachbau spaeter anfasst,
-// soll translateY(-12px) scale(1.03) sehen, nicht sechs Zahlen.
+// matrix(a,b,c,d,e,f) is correct and unreadable. Whoever touches the rebuild
+// later should see translateY(-12px) scale(1.03), not six numbers.
 const readableTransform = v => {
   const mm = /^matrix\(([^)]+)\)$/.exec(String(v).trim());
   if (!mm) return v;
@@ -187,10 +186,10 @@ const readableTransform = v => {
 
 const value = (k, v) => (k === 'transform' ? readableTransform(v) : v);
 
-// keepAll fuer Zustands- und Keyframe-Regeln. Dort ist der Vorgabewert die
-// Aussage: "opacity: 1" und "transform: none" SIND das Ziel eines Reveals.
-// Sie als Rauschen zu filtern liefert eine leere Regel — und damit einen
-// Nachbau, der das Element nie sichtbar macht.
+// keepAll for state and keyframe rules. There the default value is the
+// statement: "opacity: 1" and "transform: none" ARE the target of a reveal.
+// Filtering them as noise yields an empty rule — and with it a rebuild that
+// never makes the element visible.
 const declBlock = (obj, indent = '  ', keepAll = false) => Object.entries(obj)
   .filter(([k, v]) => v != null && v !== '' && (keepAll || meaningful(k, v)))
   .map(([k, v]) => `${indent}${k}: ${value(k, v)};`).join('\n');
@@ -203,7 +202,7 @@ const iterations = m.timing?.loops ? 'infinite' : 1;
 const trigger = (m.triggers || ['load'])[0];
 const io = m.dependencies?.intersectionObservers?.[0];
 
-// Der Startzustand ist der gemessene from-Wert, der Zielzustand der to-Wert.
+// The start state is the measured from value, the target state the to value.
 const fromDecl = {}, toDecl = {};
 for (const [p, s] of Object.entries(m.states || {})) {
   if (meaningful(p, s.from) || s.from === '0' || /^0(\.\d+)?$/.test(s.from)) fromDecl[p] = s.from;
@@ -212,7 +211,7 @@ for (const [p, s] of Object.entries(m.states || {})) {
 
 const keyframeBlock = () => {
   if (kf.length > 1) {
-    // Echte Offsets aus der Engine.
+    // Real offsets from the engine.
     return kf.map(k => {
       const body = Object.entries(k)
         .filter(([key, v]) => !['offset', 'easing', 'composite', 'computedOffset'].includes(key) && v != null)
@@ -224,8 +223,8 @@ const keyframeBlock = () => {
   return `  from {\n${a}\n  }\n  to {\n${b}\n  }`;
 };
 
-// Bei click/scroll/drag traegt eine Klasse den Zustand — CSS allein kann das
-// nicht, und ein Nachbau soll nicht so tun als koennte er es.
+// For click/scroll/drag a class carries the state — CSS alone cannot, and a
+// rebuild should not pretend it can.
 const STATE_CLASS = { click: 'is-active', touch: 'is-active', scroll: 'is-visible', drag: 'is-active', pointer: 'is-active', idle: 'is-active', focus: null, hover: null, load: null, loop: null };
 const stateClass = STATE_CLASS[trigger] ?? 'is-active';
 
@@ -237,17 +236,17 @@ const stateSelector =
 
 const usesKeyframes = trigger === 'loop' || trigger === 'load' || (!stateSelector && hasMotion);
 
-// Jede Eigenschaft braucht ihr eigenes Timing. "transform, opacity 420ms ease"
-// ist gueltige CSS-Syntax und trotzdem falsch: nur opacity bekaeme die 420ms,
-// transform liefe mit dem Vorgabewert 0s — also gar nicht.
+// Every property needs its own timing. "transform, opacity 420ms ease" is
+// valid CSS syntax and still wrong: only opacity would get the 420ms,
+// transform would run with the default 0s — that is, not at all.
 const transitionValue = props
   .map(p => `${p} ${dur}ms ${easing}${delay ? ' ' + delay + 'ms' : ''}`)
   .join(',\n              ');
 
-// Unter prefers-reduced-motion nur die Bewegung wegnehmen, nicht den Inhalt.
-// Bei einem Reveal (Startzustand unsichtbar) muss der Endzustand gesetzt
-// werden, sonst bleibt das Element dauerhaft verborgen. Bei einem Hover-Effekt
-// waere genau das falsch — die Karte staende dann permanent im Hover-Zustand.
+// Under prefers-reduced-motion take away only the motion, not the content.
+// For a reveal (start state invisible) the end state must be set, otherwise
+// the element stays hidden for good. For a hover effect exactly that would be
+// wrong — the card would then sit permanently in its hover state.
 const revealsIntoView = ['scroll', 'load'].includes(trigger)
   && (parseFloat(fromDecl.opacity ?? '1') === 0 || (fromDecl.visibility === 'hidden'));
 
@@ -258,31 +257,31 @@ const baseDecl = [
   usesKeyframes ? '' : declBlock(fromDecl, '  ', true),
 ].filter(Boolean).join('\n');
 
-// Der Hintergrund der Demo-Seite richtet sich nach der gemessenen Textfarbe.
-// Ein Element von einer dunklen Seite bringt helle Schrift mit; auf weissem
-// Grund ist die Preview dann unlesbar und die Extraktion sieht kaputt aus,
-// obwohl sie stimmt. Eigener Hintergrund am Element schlaegt beides.
+// The demo page background follows the measured text colour. An element from
+// a dark page brings light text along; on a white background the preview is
+// then unreadable and the extraction looks broken although it is right. A
+// background on the element itself beats both.
 const demoBackground = (() => {
   const own = m.box?.['background-color'];
   if (own && own !== 'rgba(0, 0, 0, 0)' && !/^rgba\(.*,\s*0\)$/.test(own)) return '#f5f5f5';
   const rgb = /rgba?\((\d+)[,\s]+(\d+)[,\s]+(\d+)/.exec(m.box?.color || '');
   if (!rgb) return '#f5f5f5';
   const [r, g, b] = rgb.slice(1).map(Number);
-  // Wahrnehmungsgewichtete Helligkeit, nicht der arithmetische Mittelwert:
-  // Gruen traegt zur empfundenen Helligkeit viel mehr bei als Blau.
+  // Perceptually weighted luminance, not the arithmetic mean: green
+  // contributes far more to perceived brightness than blue.
   const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
   return lum > 0.6 ? '#111111' : '#f5f5f5';
 })();
 
 const rmComment = m.reducedMotion?.respected === false
-  ? 'Die Quellseite ignoriert prefers-reduced-motion. Dieser Nachbau nicht.'
-  : 'prefers-reduced-motion wird respektiert, wie in der Quellseite.';
+  ? 'The source page ignores prefers-reduced-motion. This rebuild does not.'
+  : 'prefers-reduced-motion is respected, as in the source page.';
 
-const css = `/* ${m.title} — eigenstaendiger Nachbau.
+const css = `/* ${m.title} — independent rebuild.
  *
- * Geschrieben aus der Messung in metadata.json, nicht aus dem CSS der
- * Quellseite. Die Werte unten stammen aus:
- *   Dauer   ${m.timing?.durationMs ?? '—'}ms  (${m.timing?.durationSource ?? '—'})
+ * Written from the measurement in metadata.json, not from the source page's
+ * CSS. The values below come from:
+ *   Duration ${m.timing?.durationMs ?? '—'}ms  (${m.timing?.durationSource ?? '—'})
  *   Delay   ${m.timing?.delayMs ?? 0}ms
  *   Easing  ${easing}
  *   Trigger ${trigger}
@@ -310,15 +309,15 @@ ${keyframeBlock()}
     animation-iteration-count: 1;
   }
 ${revealsIntoView ? `
-  /* Ein Reveal ohne Animation muss trotzdem sichtbar sein — sonst versteckt
-     Reduced Motion den Inhalt, statt nur die Bewegung wegzunehmen. */
+  /* A reveal without animation must still be visible — otherwise reduced
+     motion hides the content instead of only taking away the motion. */
   .${ROOT} {
 ${declBlock(toDecl, '    ', true)}
   }` : ''}
 }
 `.replace(/\n{3,}/g, '\n\n').replace(/\n\s*\n(\s*\})/g, '\n$1');
 
-// ── Ausgabe ─────────────────────────────────────────────────────────────────
+// ── Output ──────────────────────────────────────────────────────────────────
 mkdirSync(join(DIR, 'rebuilt'), { recursive: true });
 mkdirSync(join(DIR, 'react'), { recursive: true });
 mkdirSync(join(DIR, 'svelte'), { recursive: true });
@@ -327,10 +326,10 @@ rmSync(join(DIR, 'NOT-REBUILT.md'), { force: true });
 const htmlMarkup = buildMarkup(m.structure, ROOT, 2, 'class');
 const needsJs = !!stateClass && stateClass !== null && !['hover', 'focus', 'load', 'loop'].includes(trigger);
 
-const js = !needsJs ? `// Trigger "${trigger}" braucht kein JavaScript — das CSS traegt den Zustand.
-// Diese Datei bleibt leer, damit index.html unveraendert funktioniert.
-` : trigger === 'scroll' ? `// Scroll-Reveal. Gemessen: IntersectionObserver mit threshold ${io?.threshold ?? 0.25}${io?.rootMargin ? ', rootMargin "' + io.rootMargin + '"' : ''}.
-// Einmalig — nach dem Aufdecken wird nicht mehr beobachtet.
+const js = !needsJs ? `// Trigger "${trigger}" needs no JavaScript — the CSS carries the state.
+// This file stays empty so index.html works unchanged.
+` : trigger === 'scroll' ? `// Scroll reveal. Measured: IntersectionObserver with threshold ${io?.threshold ?? 0.25}${io?.rootMargin ? ', rootMargin "' + io.rootMargin + '"' : ''}.
+// Once only — after revealing, it is no longer observed.
 const io = new IntersectionObserver((entries, obs) => {
   for (const e of entries) {
     if (!e.isIntersecting) continue;
@@ -340,7 +339,7 @@ const io = new IntersectionObserver((entries, obs) => {
 }, { threshold: ${JSON.stringify(io?.threshold ?? 0.25)}, rootMargin: ${JSON.stringify(io?.rootMargin ?? '0px')} });
 
 for (const el of document.querySelectorAll('.${ROOT}')) io.observe(el);
-` : `// Zustandswechsel per ${trigger}.
+` : `// State change on ${trigger}.
 for (const el of document.querySelectorAll('.${ROOT}')) {
   el.addEventListener('${trigger === 'touch' ? 'pointerdown' : trigger === 'drag' ? 'pointerdown' : 'click'}', () => {
     el.classList.toggle('${stateClass}');
@@ -349,7 +348,7 @@ for (const el of document.querySelectorAll('.${ROOT}')) {
 `;
 
 const page = `<!doctype html>
-<html lang="de">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <title>${esc(m.title)} — parity rebuilt</title>
@@ -366,13 +365,13 @@ const page = `<!doctype html>
 <div id="stage">
 ${htmlMarkup}
 </div>
-<!-- Klassisches Script, kein Modul: type="module" wird beim Oeffnen per
-     file:// von der CORS-Regel blockiert, und dann ist die Demo tot, sobald
-     jemand sie herunterlaedt und doppelklickt. -->
+<!-- Classic script, not a module: type="module" is blocked by the CORS rule
+     when opened via file://, and then the demo is dead as soon as someone
+     downloads it and double-clicks. -->
 <script src="script.js"></script>
 <script>
-  // Dieselbe Fernsteuerung wie die isolierte Preview, damit die Oberflaeche
-  // beide gleich bedienen kann.
+  // The same remote control as the isolated preview, so the interface can
+  // drive both the same way.
   const target = document.querySelector('.${ROOT}');
   const anims = () => (target ? target.getAnimations({ subtree: true }) : []);
   const api = {
@@ -405,8 +404,8 @@ writeFileSync(join(DIR, 'rebuilt/script.js'), js, 'utf8');
 const pascal = ROOT.split('-').map(s => s[0].toUpperCase() + s.slice(1)).join('') || 'Component';
 const jsxMarkup = buildMarkup(m.structure, ROOT, 2, 'className');
 
-// Ein ref nur, wo er auch gebraucht wird. Ein ungenutzter useRef ist Ballast,
-// den jeder Leser erst als solchen erkennen muss.
+// A ref only where it is needed. An unused useRef is ballast every reader
+// first has to recognise as such.
 const usesRef = trigger === 'scroll';
 const reactHooks = trigger === 'scroll' ? ['useEffect', 'useRef', 'useState']
   : needsJs ? ['useState'] : [];
@@ -418,7 +417,7 @@ const reactBody =
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    // Gemessen: IntersectionObserver, threshold ${io?.threshold ?? 0.25}${io?.rootMargin ? ', rootMargin "' + io.rootMargin + '"' : ''}.
+    // Measured: IntersectionObserver, threshold ${io?.threshold ?? 0.25}${io?.rootMargin ? ', rootMargin "' + io.rootMargin + '"' : ''}.
     const obs = new IntersectionObserver(([e]) => {
       if (!e.isIntersecting) return;
       setVisible(true);
@@ -441,8 +440,8 @@ const rootAttrs = [
   needsJs && trigger !== 'scroll' ? `onClick={() => setActive(a => !a)}` : null,
 ].filter(Boolean).join(' ');
 
-const jsx = `// ${m.title} — eigenstaendiger Nachbau, React.
-// Geschrieben aus der Messung in metadata.json. Trigger: ${trigger}.
+const jsx = `// ${m.title} — independent rebuild, React.
+// Written from the measurement in metadata.json. Trigger: ${trigger}.
 ${reactHooks.length ? `import { ${reactHooks.join(', ')} } from 'react';\n` : ''}import './styles.css';
 
 export default function ${pascal}() {
@@ -483,7 +482,7 @@ const svelteCls = trigger === 'scroll' ? `class="${ROOT}" class:${stateClass}={v
   : needsJs ? `class="${ROOT}" class:${stateClass}={active} bind:this={el} on:click={() => (active = !active)}`
   : `class="${ROOT}" bind:this={el}`;
 
-const svelte = `<!-- ${m.title} — eigenstaendiger Nachbau, Svelte. Trigger: ${trigger}. -->
+const svelte = `<!-- ${m.title} — independent rebuild, Svelte. Trigger: ${trigger}. -->
 ${svelteScript}
 
 ${buildMarkup(m.structure, ROOT, 0, 'class').replace(`class="${ROOT}"`, svelteCls)}
@@ -494,27 +493,27 @@ ${css.replace(/^/gm, '  ')}
 `;
 writeFileSync(join(DIR, 'svelte/Component.svelte'), svelte, 'utf8');
 
-// ── Metadaten fortschreiben ─────────────────────────────────────────────────
+// ── Update the metadata ─────────────────────────────────────────────────────
 m.code = { ...m.code, rebuilt: 'rebuilt/index.html', react: 'react/Component.jsx', svelte: 'svelte/Component.svelte' };
 m.rebuild = {
   root: ROOT,
   trigger,
   stateClass: stateClass || null,
-  technique: usesKeyframes ? 'css-keyframes' : stateSelector ? 'css-transition' : 'statisch',
+  technique: usesKeyframes ? 'css-keyframes' : stateSelector ? 'css-transition' : 'static',
   needsJs,
   fromMeasurement: true,
   animated: hasMotion,
   notes: [
-    'Aus metadata.json geschrieben, nicht aus dem CSS der Quellseite.',
-    ...(hasMotion ? [] : ['Ohne gemessene Bewegung — nur der statische Zustand.']),
-    ...(m.reducedMotion?.respected === false ? ['prefers-reduced-motion wird hier respektiert, anders als im Original.'] : []),
-    ...(m.assets?.length ? [m.assets.length + ' Bilder/Medien sind im Nachbau leer — fremde Assets werden nicht uebernommen.'] : []),
-    ...(m.dependencies?.libraries?.length ? ['Die Quellseite nutzt ' + m.dependencies.libraries.join(', ') + '. Der Nachbau kommt ohne aus; das Ergebnis kann abweichen.'] : []),
+    'Written from metadata.json, not from the source page\'s CSS.',
+    ...(hasMotion ? [] : ['No measured motion — only the static state.']),
+    ...(m.reducedMotion?.respected === false ? ['prefers-reduced-motion is respected here, unlike the original.'] : []),
+    ...(m.assets?.length ? [m.assets.length + ' images/media are empty in the rebuild — third-party assets are not taken over.'] : []),
+    ...(m.dependencies?.libraries?.length ? ['The source page uses ' + m.dependencies.libraries.join(', ') + '. The rebuild does without; the result may differ.'] : []),
   ],
 };
 if (m.status === 'isolated' || m.status === 'inspected') m.status = 'rebuilt';
 
-// ── Aufnahme ────────────────────────────────────────────────────────────────
+// ── Capture ─────────────────────────────────────────────────────────────────
 if (SHOT) {
   const { chromium } = await import('playwright');
   const b = await chromium.launch();
@@ -529,7 +528,7 @@ if (SHOT) {
     m.previews = { ...m.previews, rebuilt: 'preview-rebuilt.png' };
     emit({ ev: 'shot', cmd: 'rebuild', mark: 'preview-rebuilt', path: join(DIR, 'preview-rebuilt.png') });
   } catch (e) {
-    m.rebuild.notes.push('Aufnahme der Nachbau-Preview fehlgeschlagen: ' + String(e).slice(0, 100));
+    m.rebuild.notes.push('Capturing the rebuild preview failed: ' + String(e).slice(0, 100));
   } finally { await b.close(); }
 }
 

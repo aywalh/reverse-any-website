@@ -48,7 +48,7 @@ await browser.close();
 if (r.sizeMismatch) {
   const [aw, ah, bw, bh] = r.sizeMismatch;
   emit({ ev: 'done', cmd: 'pxdiff', ok: false, reason: 'size', exit: 1 });
-  console.error(`✗ Größen weichen ab: ${aw}×${ah} vs ${bw}×${bh}`);
+  console.error(`✗ Sizes differ: ${aw}×${ah} vs ${bw}×${bh}`);
   process.exit(1);
 }
 
@@ -56,8 +56,8 @@ const pct = (100 * r.differing / r.total).toFixed(3);
 const ok = r.worst <= TOL;
 emit({ ev: 'row', kind: 'pxdiff', label: 'worst channel delta', source: '0', clone: String(r.worst), match: ok });
 emit({ ev: 'done', cmd: 'pxdiff', ok, differing: r.differing, pct: Number(pct), worst: r.worst, tolerance: TOL, exit: ok ? 0 : 1 });
-console.log(`\n  ${r.w}×${r.h}  ·  ${r.differing} von ${r.total} Pixeln abweichend (${pct} %)
-  schlimmste Kanalabweichung: ${r.worst} von 255   (Toleranz ${TOL})
-${ok ? '\n\x1b[32m✓ Bildgleich im Rahmen der Toleranz\x1b[0m  \x1b[2mAbweichungen dieser Größe sind GPU-Rundung.\x1b[0m\n'
-     : `\n\x1b[31m✗ Sichtbarer Unterschied\x1b[0m  Bereich ${JSON.stringify(r.box)}\n`}`);
+console.log(`\n  ${r.w}×${r.h}  ·  ${r.differing} of ${r.total} pixels differ (${pct} %)
+  worst channel deviation: ${r.worst} of 255   (tolerance ${TOL})
+${ok ? '\n\x1b[32m✓ Images match within tolerance\x1b[0m  \x1b[2mDeviations of this size are GPU rounding.\x1b[0m\n'
+     : `\n\x1b[31m✗ Visible difference\x1b[0m  region ${JSON.stringify(r.box)}\n`}`);
 process.exit(ok ? 0 : 1);

@@ -82,7 +82,7 @@ for (const host of new Set([target.host, bare, 'www.' + bare])) {
     }
   }
 }
-if (rewritten) emit({ ev: 'note', kind: 'localize', name: 'self-contained', note: `${rewritten} absolute Origin-URLs umgebogen`, bad: false });
+if (rewritten) emit({ ev: 'note', kind: 'localize', name: 'self-contained', note: `${rewritten} absolute origin URLs redirected`, bad: false });
 
 // ── 3. install the guard before any page script ────────────────────────────
 const GUARD = 'parity-guard.js';
@@ -209,7 +209,7 @@ if (existsSync(guardPath) && !readFileSync(guardPath, 'utf8').includes('parity g
 
 emit({ ev: 'done', cmd: 'localize', bytes: html.length, stripped, allow: ALLOW, exit: 0 });
 console.log(`✓ ${join(OUT, 'index.html')}  (${before} → ${html.length} bytes)`);
-if (rewritten) console.log(`  ${rewritten} absolute Origin-URLs auf den Clone umgebogen`);
-console.log(`  tracker entfernt: ${stripped.length ? stripped.join(', ') : 'keine gefunden'}`);
-console.log(`  guard: ${guardPath}${ALLOW.length ? `  · erlaubt: ${ALLOW.join(', ')}` : ''}`);
-console.log(`\n  Nächster Schritt:  node tools/fetch-assets.mjs ${new URL(URL_).origin} ${OUT} ${join(OUT, 'index.html')}`);
+if (rewritten) console.log(`  ${rewritten} absolute origin URLs redirected to the clone`);
+console.log(`  trackers removed: ${stripped.length ? stripped.join(', ') : 'none found'}`);
+console.log(`  guard: ${guardPath}${ALLOW.length ? `  · allowed: ${ALLOW.join(', ')}` : ''}`);
+console.log(`\n  Next step:  node tools/fetch-assets.mjs ${new URL(URL_).origin} ${OUT} ${join(OUT, 'index.html')}`);

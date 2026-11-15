@@ -46,5 +46,5 @@ for (const w of WIDTHS) {
 }
 writeFileSync(join(OUT, 'RESPONSIVE.json'), JSON.stringify({ url: URL_, rows, errors: errs }, null, 2), 'utf8');
 emit({ ev: 'done', cmd: 'responsive', rows: rows.length, overflow: rows.filter(r => r.overflowX > 0).length, errors: errs.length, exit: 0 });
-console.log(`  overflow-Verstöße: ${rows.filter(r => r.overflowX > 0).length} · pageerrors: ${errs.length}`);
+console.log(`  overflow violations: ${rows.filter(r => r.overflowX > 0).length} · pageerrors: ${errs.length}`);
 await b.close();

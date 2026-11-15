@@ -1,28 +1,28 @@
-// Selective Extraction — misst ein einzelnes Element statt einer ganzen Seite.
+// Selective extraction — measures a single element instead of a whole page.
 //
-// Usage: node tools/extract.mjs <url> --selector <css> [Optionen]
-//   --selector <css>     Ziel. Pflicht.
-//   --trigger <name>     auto (Vorgabe) | load hover click focus scroll drag pointer touch idle loop
-//   --scope <name>       element (Vorgabe) | animation | deps | interaction | section
-//   --out <dir>          Vorgabe: extractions/<slug>
-//   --repeat <n>         Wie oft der Trigger gemessen wird (Vorgabe 3)
-//   --title <text>       Anzeigename
+// Usage: node tools/extract.mjs <url> --selector <css> [options]
+//   --selector <css>     Target. Required.
+//   --trigger <name>     auto (default) | load hover click focus scroll drag pointer touch idle loop
+//   --scope <name>       element (default) | animation | deps | interaction | section
+//   --out <dir>          default: extractions/<slug>
+//   --repeat <n>         How often the trigger is measured (default 3)
+//   --title <text>       Display name
 //
-// Der Rest von parity misst zwei Seiten und vergleicht sie. Hier wird ein Ziel
-// gemessen und isoliert — dieselben Werkzeuge, anderes Ergebnis.
+// The rest of parity measures two pages and compares them. Here one target is
+// measured and isolated — the same tools, a different result.
 //
-// Die zentrale Sonde ist element.getAnimations({subtree:true}): sie liefert
-// CSS-Transitions, CSS-Keyframes UND Web Animations API in einem Aufruf, mit
-// echten Dauern, Delays und Easing-Kurven direkt aus der Engine. Was daran
-// vorbeilaeuft — GSAP, rAF-getriebenes JS — wird durch Abtasten der Computed
-// Styles pro Frame erfasst. Beides zusammen deckt ab, was ohne Raten geht.
+// The central probe is element.getAnimations({subtree:true}): it returns CSS
+// transitions, CSS keyframes AND the Web Animations API in one call, with real
+// durations, delays and easing curves straight from the engine. Whatever slips
+// past it — GSAP, rAF-driven JS — is captured by sampling the computed styles
+// per frame. Together they cover what can be done without guessing.
 import { chromium } from 'playwright';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join, resolve as resolvePath } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { emit } from './_emit.mjs';
 
-// ── Argumente ───────────────────────────────────────────────────────────────
+// ── Arguments ───────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2);
 const flag = (n, d = null) => { const i = argv.indexOf('--' + n); return i > -1 ? (argv[i + 1] ?? d) : d; };
 const URL_ = argv[0];
@@ -41,22 +41,21 @@ const slugify = s => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/
 const SLUG = slugify(TITLE || SEL);
 const OUT = flag('out', join('extractions', SLUG));
 
-// Grundstock an Eigenschaften, die fast jede Animation bewegt. Kurz gehalten:
-// jede zusaetzliche kostet Messzeit pro Frame.
+// Base set of properties that almost every animation moves. Kept short: each
+// extra one costs measurement time per frame.
 //
-// Diese Liste allein reicht nicht. Eine feste Auswahl uebersieht genau das, was
-// die Seite tatsaechlich animiert — ein Button, dessen Hover nur die
-// border-color aendert, meldet sonst "keine Bewegung", obwohl er sich sichtbar
-// aendert. Was zusaetzlich zu beobachten ist, steht im CSS der Seite und wird
-// dort ausgelesen (siehe candidateProps in INSPECT).
+// This list alone is not enough. A fixed selection misses exactly what the
+// page actually animates — a button whose hover only changes border-color
+// would otherwise report "no motion" although it visibly changes. What else to
+// watch is in the page's CSS and is read from there (see candidateProps in INSPECT).
 const BASE_WATCH = [
   'transform', 'opacity', 'filter', 'clip-path', 'color', 'background-color',
   'width', 'height', 'translate', 'rotate', 'scale', 'visibility',
   'border-radius', 'box-shadow', 'letter-spacing', 'backdrop-filter',
 ];
 
-// Nicht animierbare oder pro Frame wertlose Eigenschaften. Sie aus dem CSS
-// aufzunehmen kostet nur Messzeit.
+// Properties that cannot be animated or are worthless per frame. Taking them
+// from the CSS only costs measurement time.
 const NOT_WATCHABLE = new Set([
   'content', 'cursor', 'pointer-events', 'user-select', 'will-change', 'contain',
   'transition', 'transition-property', 'transition-duration', 'transition-delay',
@@ -68,10 +67,10 @@ const NOT_WATCHABLE = new Set([
 
 const step = (name, label, extra = {}) => emit({ ev: 'step', cmd: 'extract', name, label, ...extra });
 
-// ── Recorder, die vor jedem Seitenskript laufen muessen ─────────────────────
-// addEventListener, IntersectionObserver und rAF lassen sich nachtraeglich nicht
-// rekonstruieren — wer sie erst nach dem Laden abfragt, sieht nichts. Also
-// werden sie vorher ersetzt und protokollieren mit.
+// ── Recorders that must run before any page script ──────────────────────────
+// addEventListener, IntersectionObserver and rAF cannot be reconstructed after
+// the fact — whoever asks only after load sees nothing. So they are replaced
+// beforehand and log as they go.
 const INIT = () => {
   const P = { listeners: [], io: [], raf: 0, ro: 0, waapi: 0 };
   window.__parity = P;
@@ -96,7 +95,7 @@ const INIT = () => {
       const on = this instanceof Element ? cssPath(this)
         : this === window ? 'window' : this === document ? 'document' : 'other';
       if (P.listeners.length < 4000) P.listeners.push({ type, on, node: this instanceof Element ? this : null });
-    } catch { /* Aufzeichnen darf die Seite nie stoeren */ }
+    } catch { /* recording must never disturb the page */ }
     return oAdd.call(this, type, fn, opts);
   };
 
@@ -121,7 +120,7 @@ const INIT = () => {
   if (oAnim) Element.prototype.animate = function () { P.waapi++; return oAnim.apply(this, arguments); };
 };
 
-// ── In-Page: Struktur, CSS, Abhaengigkeiten ─────────────────────────────────
+// ── In-page: structure, CSS, dependencies ───────────────────────────────────
 const INSPECT = ({ sel, scope, watch }) => {
   const el = document.querySelector(sel);
   if (!el) return { found: false };
@@ -137,7 +136,7 @@ const INSPECT = ({ sel, scope, watch }) => {
     return parts.join(' > ');
   })();
 
-  // Die Vorfahren tragen das Layout. Ohne sie steht das Element im Nichts.
+  // The ancestors carry the layout. Without them the element stands in a void.
   const ancestors = [];
   for (let n = el.parentElement; n && n !== document.documentElement; n = n.parentElement) {
     const c = getComputedStyle(n);
@@ -155,12 +154,12 @@ const INSPECT = ({ sel, scope, watch }) => {
     if (ancestors.length >= 6) break;
   }
 
-  // ── CSS: passende Regeln, Keyframes, Pseudo-Elemente, @font-face
+  // ── CSS: matching rules, keyframes, pseudo-elements, @font-face
   const rules = [], keyframes = {}, fontFaces = [], pseudo = [], mediaSeen = [];
   const scopeEls = [el, ...el.querySelectorAll('*')].slice(0, scope === 'section' || scope === 'deps' ? 400 : 150);
 
-  // ":hover" & Co. matchen im Ruhezustand nie — fuer die Regelsuche entfernen,
-  // sonst faellt genau die Regel raus, die die Animation ausloest.
+  // ":hover" and friends never match at rest — strip them for the rule search,
+  // otherwise exactly the rule that triggers the animation drops out.
   const STATE = /::?(hover|focus|focus-visible|focus-within|active|visited|target|checked|before|after|first-line|first-letter|placeholder|selection|marker|backdrop|not-allowed)\b(\([^)]*\))?/g;
   const matchesAny = selText => selText.split(',').some(part => {
     const clean = part.replace(STATE, '').trim();
@@ -180,13 +179,13 @@ const INSPECT = ({ sel, scope, watch }) => {
         else if (r.type === 5 /* font-face */) fontFaces.push(r.cssText);
         else if (r.type === 4 /* media */) walk(r.cssRules, r.conditionText);
         else if (r.cssRules) walk(r.cssRules, media);
-      } catch { /* CORS-gesperrtes Stylesheet — nicht lesbar, kein Fehler */ }
+      } catch { /* CORS-blocked stylesheet — unreadable, not an error */ }
     }
   };
   let blockedSheets = 0;
   for (const s of document.styleSheets) { try { walk(s.cssRules, null); } catch { blockedSheets++; } }
 
-  // Nur die Keyframes, die das Ziel wirklich benutzt
+  // Only the keyframes the target actually uses
   const usedKf = new Set();
   for (const n of scopeEls) {
     for (const pe of [null, '::before', '::after']) {
@@ -208,7 +207,7 @@ const INSPECT = ({ sel, scope, watch }) => {
     willChange: c.willChange, position: c.position, display: c.display, mixBlendMode: c.mixBlendMode,
   };
 
-  // ── Listener, die dieses Ziel oder seine Vorfahren betreffen
+  // ── Listeners that concern this target or its ancestors
   const chain = new Set(); for (let n = el; n; n = n.parentElement) chain.add(n);
   const own = new Set(), inherited = new Set(), globalEv = new Set();
   for (const l of P.listeners) {
@@ -221,7 +220,7 @@ const INSPECT = ({ sel, scope, watch }) => {
     .filter(o => o.nodes?.some(n => n === el || el.contains(n) || n.contains(el)))
     .map(o => ({ threshold: o.threshold, rootMargin: o.rootMargin }));
 
-  // ── Bibliotheken (dieselbe Liste wie tools/motion.mjs)
+  // ── Libraries (the same list as tools/motion.mjs)
   const libs = [];
   const has = (fn, label) => { try { if (fn()) libs.push(label); } catch {} };
   has(() => window.gsap, 'gsap');
@@ -237,7 +236,7 @@ const INSPECT = ({ sel, scope, watch }) => {
   has(() => window.Alpine, 'alpine');
   has(() => document.querySelector('[data-framer-name],[data-projection-id]'), 'framer');
 
-  // ── Technik im Ziel selbst
+  // ── Technique within the target itself
   const canvases = [...el.querySelectorAll('canvas')].concat(el.tagName === 'CANVAS' ? [el] : []);
   const webgl = canvases.some(cv => {
     try { const a = cv.getContext('webgl2'); const b = a || cv.getContext('webgl'); return !!b; } catch { return false; }
@@ -250,7 +249,7 @@ const INSPECT = ({ sel, scope, watch }) => {
     iframe: el.querySelectorAll('iframe').length,
   };
 
-  // ── Assets und Schriften, die im Ziel vorkommen
+  // ── Assets and fonts that occur in the target
   const assets = new Set();
   for (const n of scopeEls) {
     if (n.tagName === 'IMG' && n.currentSrc) assets.add(n.currentSrc);
@@ -262,10 +261,10 @@ const INSPECT = ({ sel, scope, watch }) => {
   }
   const fonts = [...new Set(scopeEls.map(n => getComputedStyle(n).fontFamily).filter(Boolean))].slice(0, 8);
 
-  // ── Welche Eigenschaften diese Seite an diesem Ziel ueberhaupt bewegt.
-  // Aus drei Quellen, alle schon eingesammelt: die Zustandsregeln (:hover,
-  // .is-active …), die benutzten Keyframes, und was transition-property
-  // ausdruecklich nennt.
+  // ── Which properties this page moves on this target at all.
+  // From three sources, all already collected: the state rules (:hover,
+  // .is-active …), the keyframes in use, and what transition-property
+  // names explicitly.
   const props = new Set();
   const propsIn = css => { for (const m of css.matchAll(/[;{]\s*(-{0,2}[a-z][a-z0-9-]*)\s*:/g)) props.add(m[1]); };
   for (const r of rules) if (/:(hover|focus|active|checked|target)|\.(is-|has-|in\b|active|open|visible|shown)/.test(r.selector)) propsIn(r.css);
@@ -274,11 +273,11 @@ const INSPECT = ({ sel, scope, watch }) => {
     if (p && p !== 'all' && p !== 'none') props.add(p);
   }
 
-  // ── Was ein Nachbau braucht ────────────────────────────────────────────
-  // Bewusst eine BESCHREIBUNG, kein DOM-Abzug: Tag, Rolle, sichtbarer Text,
-  // und nur Klassennamen, die etwas bedeuten. Wer daraus neu schreibt, kopiert
-  // nichts — er baut nach, was gemessen wurde. Genau das trennt eine eigene
-  // Komponente von einem umbenannten Clone.
+  // ── What a rebuild needs ───────────────────────────────────────────────
+  // Deliberately a DESCRIPTION, not a DOM copy: tag, role, visible text, and
+  // only class names that mean something. Whoever writes anew from it copies
+  // nothing — they rebuild what was measured. That is exactly what separates
+  // a component of your own from a renamed clone.
   const SEMANTIC = /^[a-z][a-z-]{2,24}$/i;
   const simplify = (node, depth = 0) => ({
     tag: node.tagName.toLowerCase(),
@@ -290,8 +289,7 @@ const INSPECT = ({ sel, scope, watch }) => {
     children: depth < 2 ? [...node.children].slice(0, 8).map(c => simplify(c, depth + 1)) : [],
   });
 
-  // Die Kastenwerte des Ziels im Ruhezustand — der Startzustand, den der
-  // Nachbau treffen muss.
+  // The target's box values at rest — the start state the rebuild has to hit.
   const BOX = ['display', 'flex-direction', 'align-items', 'justify-content', 'gap',
     'padding', 'margin', 'width', 'height', 'min-height', 'max-width', 'box-sizing',
     'background-color', 'color', 'border', 'border-radius', 'box-shadow',
@@ -301,10 +299,10 @@ const INSPECT = ({ sel, scope, watch }) => {
   const box = {};
   for (const p of BOX) box[p] = c.getPropertyValue(p);
 
-  // Welche Kastenwerte die Seite an diesem Element SELBST deklariert. Der Rest
-  // ist Layout-Ergebnis: die gemessene Breite eines Block-Elements ist die
-  // Breite seines Elternteils, keine Eigenschaft der Komponente. Wer sie in
-  // einen Nachbau schreibt, friert das Layout einer fremden Seite ein.
+  // Which box values the page declares on this element ITSELF. The rest is a
+  // layout result: the measured width of a block element is its parent's
+  // width, not a property of the component. Writing it into a rebuild freezes
+  // a foreign page's layout.
   const declaredBoxProps = new Set();
   for (const r of rules) {
     let ownRule = false;
@@ -328,7 +326,7 @@ const INSPECT = ({ sel, scope, watch }) => {
     rect: { x: Math.round(rect.x), y: Math.round(rect.y + window.scrollY), w: Math.round(rect.width), h: Math.round(rect.height) },
     inViewport: rect.top < innerHeight && rect.bottom > 0,
     childCount: el.querySelectorAll('*').length,
-    outerHTML: el.outerHTML.length > 60000 ? el.outerHTML.slice(0, 60000) + '\n<!-- parity: gekuerzt -->' : el.outerHTML,
+    outerHTML: el.outerHTML.length > 60000 ? el.outerHTML.slice(0, 60000) + '\n<!-- parity: truncated -->' : el.outerHTML,
     ancestors, computed, declared,
     css: {
       rules, keyframes: Object.fromEntries([...usedKf].filter(k => keyframes[k]).map(k => [k, keyframes[k]])),
@@ -342,7 +340,7 @@ const INSPECT = ({ sel, scope, watch }) => {
   };
 };
 
-// ── In-Page: pro Frame abtasten ─────────────────────────────────────────────
+// ── In-page: sample per frame ───────────────────────────────────────────────
 const SAMPLE = ({ sel, watch, ms }) => new Promise(res => {
   const el = document.querySelector(sel);
   if (!el) return res([]);
@@ -353,7 +351,7 @@ const SAMPLE = ({ sel, watch, ms }) => new Promise(res => {
     const c = getComputedStyle(el);
     const row = { t: Math.round(performance.now() - t0) };
     for (const p of watch) row[p] = c.getPropertyValue(p);
-    // Was die Engine gerade selbst abspielt — die verlaesslichste Quelle.
+    // What the engine itself is playing right now — the most reliable source.
     row.anims = el.getAnimations({ subtree: true }).map(a => {
       const o = { kind: a.constructor.name, name: a.animationName || a.transitionProperty || null, state: a.playState };
       try { const t = a.effect.getTiming();
@@ -375,7 +373,7 @@ const SAMPLE = ({ sel, watch, ms }) => new Promise(res => {
   requestAnimationFrame(tick);
 });
 
-// ── Auswertung einer Abtastreihe ────────────────────────────────────────────
+// ── Evaluating a sample series ──────────────────────────────────────────────
 const analyseFrames = (frames, watch) => {
   if (!frames.length) return null;
   const first = frames[0];
@@ -389,8 +387,8 @@ const analyseFrames = (frames, watch) => {
       changed[p] = { from: first[p], to: frames.at(-1)[p], delay: firstChange, settled: lastChange, duration: lastChange - firstChange };
     }
   }
-  // Deklarierte Timings schlagen gemessene: sie kommen aus der Engine, nicht aus
-  // einem Abtastraster, das jeder ausgelastete Frame verschiebt.
+  // Declared timings beat measured ones: they come from the engine, not from a
+  // sampling grid that every busy frame shifts.
   const anims = [], seen = new Set();
   for (const f of frames) for (const a of f.anims || []) {
     const k = a.kind + '|' + a.name + '|' + JSON.stringify(a.timing);
@@ -445,7 +443,7 @@ const fireTrigger = async (page, sel, trigger) => {
     }
     case 'touch': await loc.tap({ timeout: 5000 }).catch(() => loc.click({ force: true })); break;
     case 'idle':  await page.waitForTimeout(1200); break;
-    default:      break;   // load / loop laufen von allein, es wird nur zugesehen
+    default:      break;   // load / loop run by themselves, we only watch
   }
 };
 
@@ -456,69 +454,69 @@ const resetTrigger = async (page, sel, trigger) => {
   await page.waitForTimeout(500);
 };
 
-// ── Isolierbarkeit ──────────────────────────────────────────────────────────
-// Vier Stufen, wie in der Spezifikation. Die Regeln sind bewusst konservativ:
-// lieber "teilweise isolierbar" behaupten und recht behalten, als "isolierbar"
-// versprechen und eine kaputte Preview ausliefern.
+// ── Isolatability ───────────────────────────────────────────────────────────
+// Four levels, as in the specification. The rules are deliberately
+// conservative: better to claim "partial" and be right than to promise
+// "isolatable" and ship a broken preview.
 const classify = (d, measured) => {
   const warn = [], reasons = [];
   let level = 'isolatable', conf = 1;
 
-  if (!d.found) return { level: 'not-analysable', reasons: ['Element nicht gefunden'], warnings: [], confidence: 0 };
+  if (!d.found) return { level: 'not-analysable', reasons: ['element not found'], warnings: [], confidence: 0 };
 
   if (d.media.webgl || d.libs.includes('three')) {
     level = 'reference-only'; conf -= .45;
-    reasons.push('WebGL/Three.js-Szene — die Runtime laesst sich nicht in eine Datei schneiden');
+    reasons.push('WebGL/Three.js scene — the runtime cannot be cut into a file');
   } else if (d.media.canvas) {
     level = 'reference-only'; conf -= .35;
-    reasons.push('Canvas-Zeichnung — der Inhalt entsteht aus JS, nicht aus DOM/CSS');
+    reasons.push('canvas drawing — the content comes from JS, not from DOM/CSS');
   } else if (d.libs.includes('rive')) {
     level = 'reference-only'; conf -= .4;
-    reasons.push('Rive-Runtime noetig');
+    reasons.push('Rive runtime required');
   }
 
   const jsLibs = d.libs.filter(l => ['gsap', 'ScrollTrigger', 'motion', 'framer', 'anime', 'lenis', 'locomotive', 'swiper'].includes(l));
   const engineAnims = (measured?.anims || []).length;
   if (level === 'isolatable' && jsLibs.length && !engineAnims) {
     level = 'partial'; conf -= .3;
-    reasons.push('Bewegung kommt aus ' + jsLibs.join('/') + ' — der Code liegt in der Library, nicht im CSS');
+    reasons.push('motion comes from ' + jsLibs.join('/') + ' — the code lives in the library, not in the CSS');
   }
   if (level === 'isolatable' && d.observers.intersection.length) {
     level = 'partial'; conf -= .12;
-    reasons.push('IntersectionObserver: der Trigger haengt an der Scroll-Position der Seite');
+    reasons.push('IntersectionObserver: the trigger depends on the page\'s scroll position');
   }
   if (d.events.ancestor.length) {
-    warn.push('Listener sitzen an Vorfahren (' + d.events.ancestor.join(', ') + ') — Parent-State noetig');
+    warn.push('listeners sit on ancestors (' + d.events.ancestor.join(', ') + ') — parent state required');
     if (level === 'isolatable') { level = 'partial'; conf -= .15; }
   }
   if (d.css.blockedSheets) {
-    warn.push(d.css.blockedSheets + ' Stylesheet(s) nicht lesbar (CORS) — das CSS ist womoeglich unvollstaendig');
+    warn.push(d.css.blockedSheets + ' stylesheet(s) unreadable (CORS) — the CSS may be incomplete');
     conf -= .1 * d.css.blockedSheets;
   }
-  if (d.assets.length) warn.push(d.assets.length + ' fremde Assets referenziert — verlinkt, nicht mitkopiert');
-  if (d.css.fontFaces.length) warn.push(d.css.fontFaces.length + ' @font-face-Regeln — fremde Schriften, Lizenz pruefen');
-  if (d.libs.includes('ScrollTrigger')) warn.push('ScrollTrigger: Start- und Endpunkte haengen an der Seitenhoehe, nicht am Element');
+  if (d.assets.length) warn.push(d.assets.length + ' third-party assets referenced — linked, not copied');
+  if (d.css.fontFaces.length) warn.push(d.css.fontFaces.length + ' @font-face rules — third-party fonts, check the licence');
+  if (d.libs.includes('ScrollTrigger')) warn.push('ScrollTrigger: start and end points depend on the page height, not on the element');
   if (!measured || (!Object.keys(measured.changed || {}).length && !engineAnims)) {
-    warn.push('Beim gewaehlten Trigger hat sich nichts messbar veraendert');
+    warn.push('nothing measurably changed on the chosen trigger');
     conf -= .3;
   }
 
   return { level, reasons, warnings: warn, confidence: Math.max(0, Math.min(1, Math.round(conf * 100) / 100)) };
 };
 
-// ── Isolierte Preview bauen ─────────────────────────────────────────────────
+// ── Build the isolated preview ──────────────────────────────────────────────
 const buildIsolated = (d, trigger, origin) => {
   const abs = u => { try { return new URL(u, origin).href; } catch { return u; } };
   const cssText = [
-    '/* parity — isoliertes CSS. Original-Regeln der Quellseite, die auf das Ziel',
-    '   oder seine Kinder passen. Nicht neu geschrieben, nur ausgeschnitten. */',
+    '/* parity — isolated CSS. The source page\'s original rules that match the',
+    '   target or its children. Not rewritten, only cut out. */',
     ...d.css.fontFaces,
     ...Object.values(d.css.keyframes),
     ...d.css.rules.map(r => r.media ? '@media ' + r.media + ' {\n  ' + r.css + '\n}' : r.css),
   ].join('\n')
-    // Relative URLs zeigen nach dem Ausschneiden ins Leere — auf den Ursprung
-    // biegen, damit die Preview zeigt, was sie zeigen soll. Dass das fremde
-    // Assets sind, steht als Warnung in den Metadaten.
+    // Relative URLs point into the void after cutting out — redirect them to
+    // the origin so the preview shows what it should. That these are
+    // third-party assets is noted as a warning in the metadata.
     .replace(/url\((['"]?)(?!data:|https?:|\/\/|#)([^'")]+)\1\)/g, (m, q, u) => 'url(' + q + abs(u) + q + ')');
 
   const styleOf = layout => Object.entries(layout)
@@ -533,11 +531,11 @@ const buildIsolated = (d, trigger, origin) => {
 
   const html = `<div id="parity-stage">\n${wrapOpen}\n${d.outerHTML}\n${wrapClose}\n</div>`;
 
-  const js = `// parity — Steuerung der isolierten Preview.
+  const js = `// parity — controls for the isolated preview.
 // Trigger: ${trigger}.
-// Play/Pause/Restart wirken auf alles, was die Browser-Engine kennt: CSS-
-// Transitions, CSS-Keyframes und Web Animations API. Nicht auf JS-Schleifen
-// fremder Libraries — die werden hier bewusst nicht mitgeliefert.
+// Play/pause/restart act on everything the browser engine knows: CSS
+// transitions, CSS keyframes and the Web Animations API. Not on JS loops of
+// third-party libraries — those are deliberately not shipped here.
 const stage = document.getElementById('parity-stage');
 const target = stage.querySelector(${JSON.stringify(innerSel)}) || stage.lastElementChild;
 const anims = () => (target ? target.getAnimations({ subtree: true }) : []);
@@ -560,7 +558,7 @@ ${trigger === 'hover' ? `    target.dispatchEvent(new PointerEvent('pointerenter
 };
 
 window.parityPreview = api;
-// Die UI steuert die Preview von aussen durch das iframe.
+// The UI controls the preview from outside through the iframe.
 window.addEventListener('message', e => {
   const c = e.data && e.data.parity;
   if (c && typeof api[c.cmd] === 'function') api[c.cmd](c.arg);
@@ -568,7 +566,7 @@ window.addEventListener('message', e => {
 `;
 
   const page = `<!doctype html>
-<html lang="de">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <title>parity — isolated</title>
@@ -583,9 +581,9 @@ window.addEventListener('message', e => {
 </head>
 <body>
 ${html}
-<!-- Klassisches Script, kein Modul: type="module" wird beim Oeffnen per
-     file:// von der CORS-Regel blockiert, und dann ist die Demo tot, sobald
-     jemand sie herunterlaedt und doppelklickt. -->
+<!-- Classic script, not a module: type="module" is blocked by the CORS rule
+     when opened via file://, and then the demo is dead as soon as someone
+     downloads it and double-clicks. -->
 <script src="script.js"></script>
 </body>
 </html>`;
@@ -593,16 +591,16 @@ ${html}
   return { page, cssText, js };
 };
 
-// CSS.escape gibt es hier nicht — Klassennamen sind fast immer harmlos, aber
-// ein fuehrender Ziffer- oder Sonderzeichenfall wuerde den Selector zerlegen.
+// CSS.escape does not exist here — class names are almost always harmless, but
+// a leading digit or special character would break the selector.
 function CSS_escape(s) { return s.replace(/([^\w-])/g, '\\$1').replace(/^(\d)/, '\\3$1 '); }
 
-// ── Lauf ────────────────────────────────────────────────────────────────────
+// ── Run ─────────────────────────────────────────────────────────────────────
 const origin = new URL(URL_).origin;
 mkdirSync(join(OUT, 'vanilla'), { recursive: true });
 
 emit({ ev: 'phase', name: 'extract', status: 'start', url: URL_, selector: SEL });
-console.log(`→ ${URL_}\n  Ziel: ${SEL}`);
+console.log(`→ ${URL_}\n  Target: ${SEL}`);
 
 const browser = await chromium.launch({ args: ['--use-gl=angle', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
 
@@ -624,8 +622,8 @@ const openPage = async (opts = {}) => {
 
 const { page, ctx, errors: consoleErrors } = await openPage();
 
-// Einmal durchscrollen: Reveal-Styles existieren nur an Elementen, die die Seite
-// schon angefasst hat. Ohne das misst man den Zustand vor dem Aufwachen.
+// Scroll through once: reveal styles only exist on elements the page has
+// already touched. Without that you measure the state before waking up.
 await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight / 3));
 await page.waitForTimeout(1200);
 await page.evaluate(() => window.scrollTo(0, 0));
@@ -634,40 +632,40 @@ await page.waitForTimeout(800);
 const found = await page.locator(SEL).count().catch(() => 0);
 if (!found) {
   await browser.close();
-  emit({ ev: 'done', cmd: 'extract', exit: 1, err: 'Selector trifft nichts: ' + SEL });
-  console.error(`✗ Selector trifft kein Element: ${SEL}`);
+  emit({ ev: 'done', cmd: 'extract', exit: 1, err: 'selector matches nothing: ' + SEL });
+  console.error(`✗ Selector matches no element: ${SEL}`);
   process.exit(1);
 }
-step('element', 'Element gefunden', { count: found });
+step('element', 'Element found', { count: found });
 
 const data = await page.evaluate(INSPECT, { sel: SEL, scope: SCOPE, watch: BASE_WATCH });
 
-// Was diese Seite an diesem Ziel wirklich bewegt, steht in ihrem eigenen CSS.
-// Der Grundstock deckt den Normalfall ab; die Zusatzliste faengt die Faelle,
-// die eine feste Auswahl nie erwischt — border-color, stroke, gap, was auch
-// immer die Seite in ihrer :hover- oder Keyframe-Regel deklariert.
+// What this page really moves on this target is in its own CSS. The base set
+// covers the normal case; the extra list catches the cases a fixed selection
+// never gets — border-color, stroke, gap, whatever the page declares in its
+// :hover or keyframe rule.
 const EXTRA = (data.candidateProps || []).filter(p => !NOT_WATCHABLE.has(p) && !BASE_WATCH.includes(p));
 const WATCH = [...BASE_WATCH, ...EXTRA].slice(0, 48);
-if (EXTRA.length) emit({ ev: 'note', kind: 'extract', name: 'beobachtet', note: 'zusaetzlich aus dem CSS der Seite: ' + EXTRA.join(', '), bad: false });
+if (EXTRA.length) emit({ ev: 'note', kind: 'extract', name: 'watched', note: 'additionally from the page\'s CSS: ' + EXTRA.join(', '), bad: false });
 
-step('css', 'CSS untersucht', { rules: data.css.rules.length, keyframes: Object.keys(data.css.keyframes).length, blocked: data.css.blockedSheets, watching: WATCH.length });
-step('js', 'JavaScript untersucht', { listeners: data.events.own.length + data.events.ancestor.length, libs: data.libs });
+step('css', 'CSS inspected', { rules: data.css.rules.length, keyframes: Object.keys(data.css.keyframes).length, blocked: data.css.blockedSheets, watching: WATCH.length });
+step('js', 'JavaScript inspected', { listeners: data.events.own.length + data.events.ancestor.length, libs: data.libs });
 
 const trigger = TRIGGER === 'auto' ? inferTrigger(data) : TRIGGER;
-step('trigger', 'Trigger erkannt', { trigger, inferred: TRIGGER === 'auto' });
-console.log(`  Trigger: ${trigger}${TRIGGER === 'auto' ? ' (erkannt)' : ''} · ${data.css.rules.length} CSS-Regeln · Libs: ${data.libs.join(', ') || '—'}`);
+step('trigger', 'Trigger detected', { trigger, inferred: TRIGGER === 'auto' });
+console.log(`  Trigger: ${trigger}${TRIGGER === 'auto' ? ' (detected)' : ''} · ${data.css.rules.length} CSS rules · Libs: ${data.libs.join(', ') || '—'}`);
 
-// ── mehrfach ausloesen und messen ───────────────────────────────────────────
-// Ein Scroll-Reveal feuert genau einmal. Der Aufwaermscroll oben hat ihn schon
-// ausgeloest, und Zurueckscrollen setzt ihn nicht zurueck — wer das ignoriert,
-// misst den Endzustand gegen sich selbst und meldet "keine Bewegung". Fuer
-// diese Trigger wird die Seite pro Durchgang neu geladen.
+// ── fire repeatedly and measure ─────────────────────────────────────────────
+// A scroll reveal fires exactly once. The warm-up scroll above already fired
+// it, and scrolling back does not reset it — ignore that and you measure the
+// end state against itself and report "no motion". For these triggers the
+// page is reloaded on every pass.
 const RELOAD_TRIGGERS = new Set(['scroll', 'load', 'idle']);
 const freshPage = async () => {
-  // Ganz nach oben, BEVOR neu geladen wird: Chrome stellt beim Reload die alte
-  // Scroll-Position wieder her. Laedt man von weiter unten neu, steht das Ziel
-  // sofort im Viewport, der Observer feuert vor der ersten Messung — und die
-  // Auswertung meldet "keine Bewegung", obwohl die Animation lief.
+  // All the way up BEFORE reloading: Chrome restores the old scroll position
+  // on reload. Reload from further down and the target is in the viewport
+  // immediately, the observer fires before the first measurement — and the
+  // evaluation reports "no motion" although the animation ran.
   await page.evaluate(() => window.scrollTo(0, 0)).catch(() => {});
   await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.evaluate(() => window.scrollTo(0, 0)).catch(() => {});
@@ -686,9 +684,9 @@ for (let i = 0; i < REPEAT; i++) {
   const r = analyseFrames(await sampling, WATCH);
   if (r) runs.push(r);
   emit({
-    ev: 'row', kind: 'measure', label: 'Durchgang ' + (i + 1),
+    ev: 'row', kind: 'measure', label: 'Pass ' + (i + 1),
     source: Object.keys(r?.changed || {}).join(', ') || '—',
-    clone: (r?.anims?.length || 0) + ' Animationen',
+    clone: (r?.anims?.length || 0) + ' animations',
     match: !!(Object.keys(r?.changed || {}).length || r?.anims?.length),
   });
 }
@@ -701,9 +699,9 @@ const measured = (() => {
   const sampledDuration = median(runs.flatMap(r => Object.values(r.changed).map(c => c.duration)));
   const sampledDelay = median(runs.flatMap(r => Object.values(r.changed).map(c => c.delay)));
 
-  // Die Engine kennt die deklarierte Dauer exakt; das Abtasten schaetzt sie nur.
-  // Bei einer Endlosschleife schaetzt es sogar Unsinn: dort aendert sich jeder
-  // Frame, also meldet die Abtastung die Breite des Messfensters als "Dauer".
+  // The engine knows the declared duration exactly; sampling only estimates it.
+  // For an infinite loop it even estimates nonsense: every frame changes there,
+  // so sampling reports the width of the measurement window as the "duration".
   const finite = anims.map(a => a.timing).filter(t => t && Number.isFinite(t.duration) && t.duration > 0);
   const loops = anims.some(a => a.timing && (a.timing.iterations === null || !Number.isFinite(a.timing.iterations)));
   const engineDuration = finite.length ? Math.max(...finite.map(t => t.duration)) : null;
@@ -715,25 +713,25 @@ const measured = (() => {
     repeats: runs.length,
     stable: runs.every(r => Object.keys(r.changed).join() === Object.keys(runs[0].changed).join()),
     loops,
-    // Engine schlaegt Abtastung. Nur wenn die Engine nichts weiss — GSAP und
-    // anderes rAF-getriebenes JS laufen an ihr vorbei — zaehlt der Messwert.
+    // Engine beats sampling. Only when the engine knows nothing — GSAP and other
+    // rAF-driven JS slip past it — does the sampled value count.
     durationMedian: engineDuration ?? (loops ? null : sampledDuration),
     delayMedian: engineDelay ?? (loops ? null : sampledDelay),
-    durationSource: engineDuration != null ? 'engine' : loops ? 'unbestimmt (Endlosschleife)' : 'abgetastet',
+    durationSource: engineDuration != null ? 'engine' : loops ? 'undetermined (infinite loop)' : 'sampled',
     sampledDurationMs: sampledDuration,
     sampledDelayMs: sampledDelay,
   };
 })();
 
-step('animation', 'Animation erkannt', {
+step('animation', 'Animation detected', {
   properties: Object.keys(measured?.changed || {}),
   anims: measured?.anims.length || 0,
   duration: measured?.durationMedian ?? null,
 });
 
-// ── Original-Preview ────────────────────────────────────────────────────────
-// Der Startzustand eines Scroll-Reveals existiert nur auf einer frisch geladenen
-// Seite — nach dem Feuern gibt es ihn nicht mehr zurueckzuholen.
+// ── Original preview ────────────────────────────────────────────────────────
+// The start state of a scroll reveal only exists on a freshly loaded page —
+// once fired, there is no getting it back.
 if (RELOAD_TRIGGERS.has(trigger)) await freshPage();
 else await resetTrigger(page, SEL, trigger);
 const previews = {};
@@ -753,9 +751,9 @@ previews.originalAfter = await shotOf('preview-original-after.png', async () => 
   await fireTrigger(page, SEL, trigger).catch(() => {});
   await page.waitForTimeout(Math.min(2000, (measured?.durationMedian ?? 600) + 400));
 });
-step('original', 'Original-Preview erstellt', { shots: Object.values(previews).filter(Boolean).length });
+step('original', 'Original preview created', { shots: Object.values(previews).filter(Boolean).length });
 
-// ── Reduced-Motion und mobile Variante ──────────────────────────────────────
+// ── Reduced motion and mobile variant ───────────────────────────────────────
 const variantProbe = async opts => {
   const v = await openPage({ ...opts, settle: 2500 }).catch(() => null);
   if (!v) return null;
@@ -778,23 +776,23 @@ const variantProbe = async opts => {
 };
 const reducedMotion = await variantProbe({ reducedMotion: 'reduce' });
 const mobile = await variantProbe({ viewport: { width: 390, height: 844 }, touch: true });
-step('deps', 'Abhaengigkeiten geprueft', { libs: data.libs, assets: data.assets.length, fonts: data.fonts.length });
+step('deps', 'Dependencies checked', { libs: data.libs, assets: data.assets.length, fonts: data.fonts.length });
 
-// ── Isolierbarkeit ──────────────────────────────────────────────────────────
+// ── Isolatability ───────────────────────────────────────────────────────────
 const iso = classify(data, measured);
-step('isolatability', 'Isolierbarkeit bewertet', { level: iso.level, confidence: iso.confidence });
-console.log(`  Isolierbarkeit: ${iso.level} · Confidence ${iso.confidence}`);
-for (const r of iso.reasons) emit({ ev: 'note', kind: 'extract', name: 'isolierbarkeit', note: r, bad: false });
-for (const w of iso.warnings) emit({ ev: 'note', kind: 'extract', name: 'warnung', note: w, bad: true });
+step('isolatability', 'Isolatability graded', { level: iso.level, confidence: iso.confidence });
+console.log(`  Isolatability: ${iso.level} · confidence ${iso.confidence}`);
+for (const r of iso.reasons) emit({ ev: 'note', kind: 'extract', name: 'isolatability', note: r, bad: false });
+for (const w of iso.warnings) emit({ ev: 'note', kind: 'extract', name: 'warning', note: w, bad: true });
 
-// ── isolierte Preview + Vanilla-Export ──────────────────────────────────────
+// ── isolated preview + vanilla export ───────────────────────────────────────
 const built = buildIsolated(data, trigger, origin);
 writeFileSync(join(OUT, 'vanilla/index.html'), built.page, 'utf8');
 writeFileSync(join(OUT, 'vanilla/style.css'), built.cssText, 'utf8');
 writeFileSync(join(OUT, 'vanilla/script.js'), built.js, 'utf8');
-step('isolated', 'Isolierte Preview erstellt', { out: join(OUT, 'vanilla/index.html') });
+step('isolated', 'Isolated preview created', { out: join(OUT, 'vanilla/index.html') });
 
-// Aufnahme der isolierten Fassung — der ehrliche Beleg, ob die Isolation traegt.
+// Capture of the isolated version — the honest proof of whether the isolation holds.
 try {
   const p2 = await ctx.newPage();
   await p2.goto(pathToFileURL(resolvePath(OUT, 'vanilla/index.html')).href, { waitUntil: 'load', timeout: 20000 });
@@ -804,12 +802,12 @@ try {
   emit({ ev: 'shot', cmd: 'extract', mark: 'preview-isolated', path: join(OUT, 'preview-isolated.png') });
   await p2.close();
 } catch (e) {
-  iso.warnings.push('Isolierte Preview liess sich nicht aufnehmen: ' + String(e).slice(0, 100));
+  iso.warnings.push('isolated preview could not be captured: ' + String(e).slice(0, 100));
 }
 
 await browser.close();
 
-// ── Metadaten ───────────────────────────────────────────────────────────────
+// ── Metadata ────────────────────────────────────────────────────────────────
 const techniques = [];
 if (parseFloat(data.declared.transitionDuration) > 0) techniques.push('css-transition');
 if (data.declared.animationName && data.declared.animationName !== 'none') techniques.push('css-keyframes');
@@ -824,11 +822,11 @@ techniques.push(...data.libs);
 
 const engineTimings = (measured?.anims || []).map(a => a.timing).filter(Boolean);
 
-// ── Reduced Motion, ehrlich ausgewertet ─────────────────────────────────────
-// Nicht ueber laufende Animationen im Ruhezustand: bei einem Hover- oder
-// Click-Effekt laeuft dort nie etwas, und die Pruefung faellt dann IMMER
-// positiv aus — auch bei einer Seite ohne jede Reduced-Motion-Regel.
-// Verglichen wird stattdessen, was der Browser unter reduce deklariert.
+// ── Reduced motion, evaluated honestly ──────────────────────────────────────
+// Not via running animations at rest: for a hover or click effect nothing ever
+// runs there, and the check would ALWAYS come out positive — even on a page
+// without any reduced-motion rule. Instead it compares what the browser
+// declares under reduce.
 const rmVerdict = (() => {
   if (!reducedMotion?.found) return { probed: false };
   const d = data.declared;
@@ -840,7 +838,7 @@ const rmVerdict = (() => {
     normal: { transitionDuration: d.transitionDuration, animationName: d.animationName, animationDuration: d.animationDuration },
     reduced: { transitionDuration: reducedMotion.transitionDuration, animationName: reducedMotion.animationName, animationDuration: reducedMotion.animationDuration },
   };
-  if (!hasMotion) return { ...base, respected: null, note: 'Kein Motion am Element deklariert — nichts zu reduzieren.' };
+  if (!hasMotion) return { ...base, respected: null, note: 'No motion declared on the element — nothing to reduce.' };
   const changed = reducedMotion.transitionDuration !== d.transitionDuration
     || reducedMotion.animationDuration !== d.animationDuration
     || reducedMotion.animationName !== d.animationName;
@@ -848,11 +846,11 @@ const rmVerdict = (() => {
     ...base,
     respected: changed,
     note: changed
-      ? 'Unter prefers-reduced-motion: reduce liefert die Seite andere Werte — sie reagiert darauf.'
-      : 'Unter prefers-reduced-motion: reduce sind die Werte unveraendert — die Seite ignoriert die Einstellung.',
+      ? 'Under prefers-reduced-motion: reduce the page returns different values — it responds to it.'
+      : 'Under prefers-reduced-motion: reduce the values are unchanged — the page ignores the setting.',
   };
 })();
-if (rmVerdict.respected === false) iso.warnings.push('prefers-reduced-motion wird von der Quellseite ignoriert — beim Nachbau selbst beruecksichtigen');
+if (rmVerdict.respected === false) iso.warnings.push('prefers-reduced-motion is ignored by the source page — handle it yourself in the rebuild');
 const category =
   data.media.webgl ? 'webgl'
   : data.media.canvas ? 'canvas'
@@ -880,8 +878,8 @@ const metadata = {
   timing: {
     durationMs: measured?.durationMedian ?? null,
     delayMs: measured?.delayMedian ?? null,
-    // Woher der Wert stammt. "engine" ist exakt, "abgetastet" ist ein Messwert
-    // mit Frame-Rauschen, "unbestimmt" heisst: die Schleife hat kein Ende.
+    // Where the value comes from. "engine" is exact, "sampled" is a measurement
+    // carrying frame noise, "undetermined" means: the loop has no end.
     durationSource: measured?.durationSource ?? null,
     sampledDurationMs: measured?.sampledDurationMs ?? null,
     sampledDelayMs: measured?.sampledDelayMs ?? null,
@@ -896,8 +894,8 @@ const metadata = {
       fill: data.declared.animationFillMode,
     },
     engine: engineTimings,
-    // Die Keyframes, wie die Engine sie kennt — mit Offsets. Daraus schreibt
-    // tools/rebuild.mjs echte @keyframes statt nur from/to zu raten.
+    // The keyframes as the engine knows them — with offsets. From these
+    // tools/rebuild.mjs writes real @keyframes instead of guessing from/to.
     keyframes: (measured?.anims || []).find(a => a.keyframes?.length > 1)?.keyframes ?? [],
     repeats: measured?.repeats ?? 0,
     stableAcrossRepeats: measured?.stable ?? null,
@@ -928,9 +926,9 @@ const metadata = {
   },
   reducedMotion: rmVerdict,
   isolatability: iso.level,
-  // Warum diese Einstufung — getrennt von den allgemeinen Warnungen. Beides in
-  // einen Topf zu werfen liefert Saetze wie "als reference-only eingestuft:
-  // 15 @font-face-Regeln", und das ist schlicht nicht der Grund gewesen.
+  // Why this grade — kept apart from the general warnings. Throwing both into
+  // one pot yields sentences like "graded reference-only: 15 @font-face
+  // rules", and that simply was not the reason.
   isolatabilityReasons: iso.reasons,
   confidence: iso.confidence,
   previews: {
@@ -940,8 +938,8 @@ const metadata = {
     rebuilt: null,
     comparison: null,
   },
-  // Beschreibung des Ziels fuer einen Nachbau. Kein Original-Markup — daraus
-  // schreibt tools/rebuild.mjs eine eigenstaendige Fassung.
+  // Description of the target for a rebuild. No original markup — from this
+  // tools/rebuild.mjs writes an independent version.
   structure: data.structure,
   box: data.box,
   declaredBoxProps: data.declaredBoxProps,
@@ -958,63 +956,63 @@ const metadata = {
   warnings: [
     ...iso.warnings,
     ...iso.reasons,
-    ...(consoleErrors.length ? [consoleErrors.length + ' Konsolenfehler auf der Quellseite'] : []),
+    ...(consoleErrors.length ? [consoleErrors.length + ' console errors on the source page'] : []),
   ],
   createdAt: new Date().toISOString(),
 };
 
 writeFileSync(join(OUT, 'metadata.json'), JSON.stringify(metadata, null, 2), 'utf8');
-step('code', 'Code vorbereitet', { out: OUT });
+step('code', 'Code prepared', { out: OUT });
 
-// ── Bericht ─────────────────────────────────────────────────────────────────
+// ── Report ──────────────────────────────────────────────────────────────────
 const changedRows = Object.entries(measured?.changed || {});
 const report = `# ${metadata.title}
 
 | | |
 |---|---|
-| Quelle | ${URL_} |
+| Source | ${URL_} |
 | Selector | \`${SEL}\` |
-| DOM-Pfad | \`${data.domPath}\` |
-| Kategorie | ${category} |
-| Trigger | ${trigger}${TRIGGER === 'auto' ? ' (automatisch erkannt)' : ' (vorgegeben)'} |
-| Technik | ${metadata.techniques.join(', ') || '—'} |
-| Isolierbarkeit | **${iso.level}** |
+| DOM path | \`${data.domPath}\` |
+| Category | ${category} |
+| Trigger | ${trigger}${TRIGGER === 'auto' ? ' (detected automatically)' : ' (given)'} |
+| Technique | ${metadata.techniques.join(', ') || '—'} |
+| Isolatability | **${iso.level}** |
 | Confidence | ${iso.confidence} |
 | Status | ${metadata.status} |
 
-## Gemessen
+## Measured
 
 ${changedRows.length
-  ? '| Eigenschaft | von | nach | Delay | Dauer |\n|---|---|---|---|---|\n' +
+  ? '| Property | from | to | Delay | Duration |\n|---|---|---|---|---|\n' +
     changedRows.map(([p, c]) => `| ${p} | \`${String(c.from).slice(0, 40)}\` | \`${String(c.to).slice(0, 40)}\` | ${c.delay}ms | ${c.duration}ms |`).join('\n')
-  : `_Beim Trigger \`${trigger}\` hat sich keine der beobachteten Eigenschaften messbar veraendert._`}
+  : `_On the trigger \`${trigger}\` none of the watched properties changed measurably._`}
 
 ${(measured?.anims || []).length
-  ? '### Von der Browser-Engine gemeldet\n\n' + measured.anims.map(a =>
+  ? '### Reported by the browser engine\n\n' + measured.anims.map(a =>
       `- **${a.kind}** \`${a.name || '—'}\` — ${a.timing?.duration ?? '?'}ms, Delay ${a.timing?.delay ?? 0}ms, \`${a.timing?.easing ?? '—'}\`, ${a.timing?.iterations ?? 1}×`).join('\n')
   : ''}
 
-**Dauer: ${measured?.durationMedian != null ? measured.durationMedian + 'ms' : 'unbestimmt'}** (Quelle: ${measured?.durationSource ?? '—'})${
-  measured?.delayMedian != null ? `, Delay ${measured.delayMedian}ms` : ''}${
-  measured?.loops ? ' · laeuft endlos' : ''}
+**Duration: ${measured?.durationMedian != null ? measured.durationMedian + 'ms' : 'undetermined'}** (source: ${measured?.durationSource ?? '—'})${
+  measured?.delayMedian != null ? `, delay ${measured.delayMedian}ms` : ''}${
+  measured?.loops ? ' · loops forever' : ''}
 
-Gemessen ueber ${measured?.repeats ?? 0} Durchgaenge${
-  measured?.stable === false ? ' — **die Durchgaenge waren nicht deckungsgleich**, der Wert ist nur ein Anhaltspunkt.'
-  : measured?.stable ? ', deckungsgleich.' : '.'}
+Measured over ${measured?.repeats ?? 0} passes${
+  measured?.stable === false ? ' — **the passes did not match**, the value is only a rough guide.'
+  : measured?.stable ? ', matching.' : '.'}
 
-## Abhaengigkeiten
+## Dependencies
 
-- Libraries: ${data.libs.join(', ') || 'keine erkannt'}
-- Listener am Ziel: ${data.events.own.join(', ') || '—'}
-- Listener an Vorfahren: ${data.events.ancestor.join(', ') || '—'}
-- IntersectionObserver: ${data.observers.intersection.length ? JSON.stringify(data.observers.intersection) : 'keine'}
-- Vorfahren fuers Layout noetig: ${data.ancestors.length}
-- Fremde Assets: ${data.assets.length}
-- Schriften: ${data.fonts.join(' · ') || '—'}
+- Libraries: ${data.libs.join(', ') || 'none detected'}
+- Listeners on the target: ${data.events.own.join(', ') || '—'}
+- Listeners on ancestors: ${data.events.ancestor.join(', ') || '—'}
+- IntersectionObserver: ${data.observers.intersection.length ? JSON.stringify(data.observers.intersection) : 'none'}
+- Ancestors needed for layout: ${data.ancestors.length}
+- Third-party assets: ${data.assets.length}
+- Fonts: ${data.fonts.join(' · ') || '—'}
 
 ## Reduced Motion
 
-${!rmVerdict.probed ? '_nicht gemessen_'
+${!rmVerdict.probed ? '_not measured_'
   : rmVerdict.respected === null ? `— ${rmVerdict.note}`
   : rmVerdict.respected ? `✓ ${rmVerdict.note}`
   : `✗ ${rmVerdict.note}`}
@@ -1027,21 +1025,21 @@ ${!rmVerdict.probed ? '_nicht gemessen_'
 
 ## Mobile
 
-${mobile?.found ? `390×844 gemessen: animation \`${mobile.animationName || 'none'}\` ${mobile.animationDuration || ''}, display \`${mobile.display}\`` : '_nicht gemessen_'}
+${mobile?.found ? `390×844 measured: animation \`${mobile.animationName || 'none'}\` ${mobile.animationDuration || ''}, display \`${mobile.display}\`` : '_not measured_'}
 
-## Grenzen
+## Limits
 
-${iso.reasons.length ? iso.reasons.map(r => '- ' + r).join('\n') : '- keine strukturellen Hindernisse gefunden'}
+${iso.reasons.length ? iso.reasons.map(r => '- ' + r).join('\n') : '- no structural obstacles found'}
 
-${iso.warnings.length ? '## Warnungen\n\n' + iso.warnings.map(w => '- ' + w).join('\n') + '\n' : ''}
-## Was hier liegt
+${iso.warnings.length ? '## Warnings\n\n' + iso.warnings.map(w => '- ' + w).join('\n') + '\n' : ''}
+## What is in here
 
-- \`metadata.json\` — die Messung, maschinenlesbar
-- \`vanilla/index.html\` — isolierte Fassung mit **Original-CSS**, nicht neu geschrieben
-- \`preview-original.png\` / \`preview-isolated.png\` — Aufnahmen zum Vergleich
+- \`metadata.json\` — the measurement, machine-readable
+- \`vanilla/index.html\` — isolated version with the **original CSS**, not rewritten
+- \`preview-original.png\` / \`preview-isolated.png\` — captures for comparison
 
-> Die isolierte Fassung enthaelt Original-Markup und Original-CSS der Quellseite.
-> Sie ist ein Analyseergebnis, keine eigene Komponente — nicht veroeffentlichen.
+> The isolated version contains the source page's original markup and original CSS.
+> It is an analysis result, not a component of yours — do not publish.
 `;
 writeFileSync(join(OUT, 'report.md'), report, 'utf8');
 
@@ -1051,10 +1049,10 @@ emit({
   properties: metadata.properties, duration: measured?.durationMedian ?? null,
   warnings: metadata.warnings.length, exit: 0,
 });
-step('export', 'Export bereit', { out: OUT });
+step('export', 'Export ready', { out: OUT });
 
 console.log(`\n✓ ${OUT}`);
-console.log(`  ${category} · ${trigger} · ${iso.level} (Confidence ${iso.confidence})`);
-if (changedRows.length) console.log(`  bewegt: ${changedRows.map(([p, c]) => `${p} ${c.duration}ms`).join(' · ')}`);
-else console.log(`  keine messbare Bewegung beim Trigger "${trigger}"`);
-if (metadata.warnings.length) console.log(`  ${metadata.warnings.length} Warnung(en) — siehe report.md`);
+console.log(`  ${category} · ${trigger} · ${iso.level} (confidence ${iso.confidence})`);
+if (changedRows.length) console.log(`  moves: ${changedRows.map(([p, c]) => `${p} ${c.duration}ms`).join(' · ')}`);
+else console.log(`  no measurable motion on the trigger "${trigger}"`);
+if (metadata.warnings.length) console.log(`  ${metadata.warnings.length} warning(s) — see report.md`);

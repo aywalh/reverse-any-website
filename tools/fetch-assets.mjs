@@ -108,7 +108,7 @@ while (queue.size) {
   const dest = join(OUT, decodePath(p));
   if (existsSync(dest) && statSync(dest).size > 0) {
     if (TEXT_EXT.test(p)) harvest(readFileSync(dest, 'utf8'), p);
-    // Auch Treffer aus dem Cache melden — sonst wirkt eine zweite Runde leer.
+    // Report cache hits too — otherwise a second round looks empty.
     emit({ ev: 'asset', path: p, family: family(p), bytes: statSync(dest).size, cached: true });
     continue;
   }

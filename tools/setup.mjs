@@ -1,11 +1,11 @@
-// Einrichtung. Prueft die Umgebung und richtet auf Wunsch die Oberflaeche ein.
+// Setup. Checks the environment and installs the interface on request.
 //
 // Usage: node tools/setup.mjs [--ui | --no-ui]
 //        parity --install
 //
-// Ohne Flag wird gefragt. Ohne Terminal (CI, Pipe) wird nicht geraten, sondern
-// nach einem Flag verlangt — eine Verknuepfung anzulegen, ohne dass jemand ja
-// gesagt hat, waere uebergriffig.
+// Without a flag it asks. Without a terminal (CI, pipe) it does not guess but
+// demands a flag — creating a shortcut without anyone saying yes would be
+// overstepping.
 import { existsSync, writeFileSync, rmSync, readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
@@ -14,12 +14,12 @@ import { homedir, tmpdir } from 'node:os';
 import { createRequire } from 'node:module';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-// Die Version steht in package.json und nirgends sonst.
+// The version lives in package.json and nowhere else.
 const VERSION = createRequire(import.meta.url)('../package.json').version;
 
-// ── Ausgabe ─────────────────────────────────────────────────────────────────
-// Farbe nur, wenn ein Terminal zuschaut. Gepipet oder mit NO_COLOR bleibt es
-// reiner Text, sonst landen Escape-Sequenzen in Logdateien.
+// ── Output ──────────────────────────────────────────────────────────────────
+// Colour only when a terminal is watching. Piped or with NO_COLOR it stays
+// plain text, otherwise escape sequences end up in log files.
 const TTY = process.stdout.isTTY && !process.env.NO_COLOR;
 const c = (code, s) => TTY ? `\x1b[${code}m${s}\x1b[0m` : s;
 const bold = s => c(1, s), dim = s => c(2, s);
@@ -27,16 +27,16 @@ const green = s => c(32, s), red = s => c(31, s), yellow = s => c(33, s);
 const w = process.stdout.columns || 80;
 const out = s => process.stdout.write(s + '\n');
 
-// Die Marke im Terminal — dieselbe Form wie im Hilfetext des Dispatchers.
+// The brand mark in the terminal — the same shape as in the dispatcher's help text.
 const header = () => {
   out('');
   out(`  ${bold('█▌▐█')}  ${bold('parity')}`);
   out('');
 };
 
-// ── Umgebung ────────────────────────────────────────────────────────────────
-// Chrome und Edge im App-Modus. Wird auch von ui/server.mjs benutzt, damit es
-// die Liste nur einmal gibt.
+// ── Environment ─────────────────────────────────────────────────────────────
+// Chrome and Edge in app mode. Also used by ui/server.mjs, so the list
+// exists only once.
 export const findBrowser = () => {
   const L = process.env.LOCALAPPDATA || '';
   const PF = process.env.ProgramFiles || 'C:\\Program Files';
@@ -55,11 +55,11 @@ export const findBrowser = () => {
   return hit ? { path: hit[0], name: hit[1] } : null;
 };
 
-// Der Agenten-Skill. Im Repo liegt unter skills/ nur die Quelle — installiert
-// ist er erst, wenn der Agent ihn ausgepackt hat: entweder als Plugin (dann
-// unter einer Versionsnummer, die hier niemanden interessiert) oder von Hand
-// nach ~/.claude/skills/. Findet sich beides nicht, wird daran erinnert; ein
-// Messlauf haengt nicht daran, deshalb blockiert es die Einrichtung nicht.
+// The agent skill. The repo only holds its source under skills/ — it is
+// installed once the agent has unpacked it: either as a plugin (then under a
+// version number nobody here cares about) or by hand into ~/.claude/skills/.
+// If neither is found, setup reminds you; a measurement run does not depend
+// on it, so it does not block setup.
 export const skillInstalled = () => {
   const home = homedir();
   if (existsSync(join(home, '.claude/skills/parity/SKILL.md'))) return true;
@@ -74,39 +74,39 @@ const checkEnvironment = async () => {
 
   const major = Number(process.versions.node.split('.')[0]);
   rows.push({ ok: major >= 18, label: 'Node', value: 'v' + process.versions.node,
-              hint: major >= 18 ? '' : 'parity braucht Node 18 oder neuer' });
+              hint: major >= 18 ? '' : 'parity needs Node 18 or newer' });
 
   let pw = null;
   try {
     pw = createRequire(import.meta.url)('playwright/package.json').version;
     rows.push({ ok: true, label: 'Playwright', value: pw });
   } catch {
-    rows.push({ ok: false, label: 'Playwright', value: 'fehlt', hint: 'npm install' });
+    rows.push({ ok: false, label: 'Playwright', value: 'missing', hint: 'npm install' });
   }
 
   if (pw) {
     let exe = null;
     try { exe = (await import('playwright')).chromium.executablePath(); } catch {}
     const ok = Boolean(exe && existsSync(exe));
-    rows.push({ ok, label: 'Chromium', value: ok ? 'installiert' : 'nicht heruntergeladen',
+    rows.push({ ok, label: 'Chromium', value: ok ? 'installed' : 'not downloaded',
                 hint: ok ? '' : 'npx playwright install chromium' });
   } else {
-    rows.push({ ok: false, label: 'Chromium', value: 'ungeprüft', hint: 'erst Playwright installieren' });
+    rows.push({ ok: false, label: 'Chromium', value: 'unchecked', hint: 'install Playwright first' });
   }
 
   const b = findBrowser();
-  rows.push({ ok: Boolean(b), soft: true, label: 'App-Fenster', value: b ? b.name : 'kein Chrome/Edge',
-              hint: b ? '' : 'die Oberfläche läuft dann im normalen Browser' });
+  rows.push({ ok: Boolean(b), soft: true, label: 'App window', value: b ? b.name : 'no Chrome/Edge',
+              hint: b ? '' : 'the interface then runs in the normal browser' });
 
   const skill = skillInstalled();
-  rows.push({ ok: skill, soft: true, label: 'Agenten-Skill', value: skill ? 'installiert' : 'nicht installiert',
+  rows.push({ ok: skill, soft: true, label: 'Agent skill', value: skill ? 'installed' : 'not installed',
               hint: skill ? '' : '/plugin marketplace add aywalh/reverse-any-website' });
 
   return rows;
 };
 
 const printChecks = rows => {
-  out(`  ${dim('Umgebung')}`);
+  out(`  ${dim('Environment')}`);
   out('');
   const pad = Math.max(...rows.map(r => r.label.length)) + 2;
   for (const r of rows) {
@@ -117,9 +117,9 @@ const printChecks = rows => {
   out('');
 };
 
-// ── Auswahl ─────────────────────────────────────────────────────────────────
-// Pfeiltasten statt J/n-Tippen. Faellt auf die erste Option zurueck, wenn das
-// Terminal keinen Rohmodus kann.
+// ── Selection ───────────────────────────────────────────────────────────────
+// Arrow keys instead of typing y/n. Falls back to the first option when the
+// terminal has no raw mode.
 export const select = (options) => new Promise(resolve => {
   if (!process.stdin.isTTY || !process.stdin.setRawMode) return resolve(0);
   let i = 0;
@@ -135,7 +135,7 @@ export const select = (options) => new Promise(resolve => {
                   : `    ${label}${dim(o.hint)}`);
     }
     out('');
-    out(dim('  ↑↓ wählen · ⏎ bestätigen · esc abbrechen'));
+    out(dim('  ↑↓ move · ⏎ confirm · esc cancel'));
   };
 
   const done = value => {
@@ -159,11 +159,11 @@ export const select = (options) => new Promise(resolve => {
   draw(false);
 });
 
-// ── Verknuepfung ────────────────────────────────────────────────────────────
-// Ziel ist node.exe direkt statt einer .cmd, damit kein Konsolenfenster im
-// Vordergrund steht. In PowerShell einfach zitieren (Backslashes sind dort
-// literal) und ueber eine Datei mit BOM statt -Command, sonst zerlegt die
-// Konsolen-Codepage Umlaute im Pfad.
+// ── Shortcut ────────────────────────────────────────────────────────────────
+// Target is node.exe directly rather than a .cmd, so no console window sits
+// in the foreground. Single-quote in PowerShell (backslashes are literal
+// there) and go through a file with BOM instead of -Command, otherwise the
+// console code page mangles umlauts in the path.
 export const LNK = process.platform === 'win32'
   ? join(process.env.APPDATA || '', 'Microsoft/Windows/Start Menu/Programs/parity.lnk')
   : null;
@@ -184,17 +184,17 @@ const createShortcut = () => {
   writeFileSync(script, '\uFEFF' + ps, 'utf8');
   const r = spawnSync('powershell', ['-NoProfile', '-NonInteractive', '-File', script], { encoding: 'utf8' });
   rmSync(script, { force: true });
-  return r.status === 0 ? null : (r.stderr || 'unbekannter Fehler').trim();
+  return r.status === 0 ? null : (r.stderr || 'unknown error').trim();
 };
 
-// ── Ablauf ──────────────────────────────────────────────────────────────────
+// ── Flow ────────────────────────────────────────────────────────────────────
 const main = async () => {
   const args = process.argv.slice(2);
   const wantUi = args.includes('--ui') ? true
                : args.includes('--no-ui') ? false : null;
 
   header();
-  out(`  ${bold('Einrichtung')}${' '.repeat(Math.max(1, w - 30))}${dim('parity ' + VERSION)}`);
+  out(`  ${bold('Setup')}${' '.repeat(Math.max(1, w - 24))}${dim('parity ' + VERSION)}`);
   out('');
 
   const rows = await checkEnvironment();
@@ -202,61 +202,61 @@ const main = async () => {
 
   const blocking = rows.filter(r => !r.ok && !r.soft);
   if (blocking.length) {
-    out(`  ${yellow('Nicht alles bereit.')} ${dim('Messläufe brauchen Playwright und Chromium.')}`);
-    out(`  ${dim('Die Einrichtung läuft trotzdem weiter — nachholen geht jederzeit.')}`);
+    out(`  ${yellow('Not everything is ready.')} ${dim('Measurement runs need Playwright and Chromium.')}`);
+    out(`  ${dim('Setup continues anyway — you can catch up any time.')}`);
     out('');
   }
 
   let ui = wantUi;
   if (ui === null) {
     if (!process.stdin.isTTY) {
-      out(`  ${red('Kein Terminal.')} Bitte ${bold('--ui')} oder ${bold('--no-ui')} angeben.`);
+      out(`  ${red('No terminal.')} Please pass ${bold('--ui')} or ${bold('--no-ui')}.`);
       process.exit(2);
     }
-    out(`  ${bold('Was soll eingerichtet werden?')}`);
+    out(`  ${bold('What should be installed?')}`);
     const pick = await select([
-      { label: 'CLI und Oberfläche', hint: 'Startmenü-Eintrag mit Fenster · empfohlen' },
-      { label: 'Nur CLI', hint: 'kein Startmenü-Eintrag' },
+      { label: 'CLI and interface', hint: 'Start menu entry with window · recommended' },
+      { label: 'CLI only', hint: 'no Start menu entry' },
     ]);
-    if (pick === -1) { out(''); out(`  ${dim('abgebrochen — nichts geändert')}`); out(''); process.exit(130); }
+    if (pick === -1) { out(''); out(`  ${dim('cancelled — nothing changed')}`); out(''); process.exit(130); }
     ui = pick === 0;
   }
 
   out('');
   if (ui && process.platform !== 'win32') {
-    out(`  ${yellow('!')}  Startmenü-Einträge gibt es bisher nur unter Windows.`);
-    out(`     ${dim('Die Oberfläche selbst läuft überall: parity ui')}`);
+    out(`  ${yellow('!')}  Start menu entries are only available on Windows so far.`);
+    out(`     ${dim('The interface itself runs everywhere: parity ui')}`);
     ui = false;
   } else if (ui) {
     const err = createShortcut();
     if (err) {
-      out(`  ${red('✗')}  Verknüpfung fehlgeschlagen`);
+      out(`  ${red('✗')}  Creating the shortcut failed`);
       out(`     ${dim(err.split('\n')[0])}`);
       process.exit(1);
     }
   }
 
-  // ── Ergebnis ──────────────────────────────────────────────────────────────
-  out(`  ${green('✓')}  ${bold(ui ? 'Eingerichtet' : 'Eingerichtet — nur CLI')}`);
+  // ── Result ────────────────────────────────────────────────────────────────
+  out(`  ${green('✓')}  ${bold(ui ? 'Installed' : 'Installed — CLI only')}`);
   out('');
   const steps = [];
-  if (ui) steps.push(['Startmenü', 'parity'],
-                     ['Oberfläche starten', 'parity ui']);
-  else steps.push(['Oberfläche bleibt verfügbar', 'parity ui']);
-  steps.push(['Erster Messlauf', 'parity capture https://ziel.tld capture/orig']);
+  if (ui) steps.push(['Start menu', 'parity'],
+                     ['Start the interface', 'parity ui']);
+  else steps.push(['Interface stays available', 'parity ui']);
+  steps.push(['First measurement run', 'parity capture https://target.tld capture/orig']);
   const pad = Math.max(...steps.map(s => s[0].length)) + 3;
   for (const [k, v] of steps) out(`     ${dim(k.padEnd(pad))}${v}`);
   out('');
 
-  // Ein fehlendes App-Fenster ist kein offener Punkt, sondern eine Auskunft —
-  // der fehlende Skill dagegen schon, deshalb faellt hier nur das eine raus.
-  const missing = rows.find(r => !r.ok && r.hint && r.label !== 'App-Fenster');
-  if (missing) { out(`  ${yellow('Noch offen:')} ${bold(missing.hint)}`); out(''); }
-  else if (ui) { out(`  ${dim('Zum Anheften: im Startmenü rechtsklicken → An Taskleiste anheften')}`); out(''); }
+  // A missing app window is not an open item but information — the missing
+  // skill is one, which is why only the former is left out here.
+  const missing = rows.find(r => !r.ok && r.hint && r.label !== 'App window');
+  if (missing) { out(`  ${yellow('Still open:')} ${bold(missing.hint)}`); out(''); }
+  else if (ui) { out(`  ${dim('To pin it: right-click in the Start menu → Pin to taskbar')}`); out(''); }
 };
 
-// Nur ausfuehren, wenn direkt aufgerufen — ui/server.mjs importiert von hier
-// findBrowser und LNK, ohne dass die Einrichtung losläuft.
+// Only run when invoked directly — ui/server.mjs imports findBrowser and LNK
+// from here without setup kicking off.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch(e => { console.error(e); process.exit(1); });
 }

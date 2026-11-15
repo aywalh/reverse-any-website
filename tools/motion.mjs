@@ -77,9 +77,9 @@ if (OUT) { mkdirSync(OUT, { recursive: true }); writeFileSync(join(OUT, 'MOTION.
 for (const e of r.entries.slice(0, 40)) emit({ ev: 'row', kind: 'motion', label: e.kind, source: `${e.ms}ms ${e.ease}`, clone: String(e.count), match: true });
 emit({ ev: 'done', cmd: 'motion', out: OUT ?? null, distinct: r.entries.length, libs: r.libs, exit: 0 });
 
-console.log(`\n${URL_}\n  ${r.elements} Elemente · ${r.entries.length} verschiedene Motion-Signaturen · Libs: ${r.libs.join(', ') || '—'}`);
-console.log(`  scroll-behavior: ${r.scrollBehavior} · prefers-reduced-motion-Regeln: ${r.reducedMotionRules}\n`);
-console.log(`  ${'Art'.padEnd(11)} ${'Dauer'.padEnd(8)} ${'Kurve'.padEnd(44)} Elemente`);
+console.log(`\n${URL_}\n  ${r.elements} elements · ${r.entries.length} distinct motion signatures · Libs: ${r.libs.join(', ') || '—'}`);
+console.log(`  scroll-behavior: ${r.scrollBehavior} · prefers-reduced-motion rules: ${r.reducedMotionRules}\n`);
+console.log(`  ${'Kind'.padEnd(11)} ${'Duration'.padEnd(8)} ${'Curve'.padEnd(44)} Elements`);
 console.log(`  ${'─'.repeat(11)} ${'─'.repeat(8)} ${'─'.repeat(44)} ${'─'.repeat(8)}`);
 for (const e of r.entries.slice(0, 18))
   console.log(`  ${e.kind.padEnd(11)} ${(e.ms + 'ms').padEnd(8)} ${e.ease.slice(0, 44).padEnd(44)} ${e.count}`);

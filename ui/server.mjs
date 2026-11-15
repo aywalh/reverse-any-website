@@ -1,7 +1,7 @@
-// parity ui — Server. Spawnt die CLI, streamt ihre --json-Events per SSE.
+// parity ui — server. Spawns the CLI and streams its --json events over SSE.
 //
-// Der Strom laeuft nur in eine Richtung, deshalb SSE statt WebSocket: eine
-// Abhaengigkeit weniger und die halbe Fehlerklasse.
+// The stream only flows one way, hence SSE instead of WebSocket: one
+// dependency fewer and half the class of bugs.
 //
 // Usage: node ui/server.mjs [port] [--no-window]
 import { createServer } from 'node:http';
@@ -35,22 +35,22 @@ const HOST = (() => {
 
 
 
-// ── Laufzustand ─────────────────────────────────────────────────────────────
-// Serverseitig gehalten: ein Reload spielt den ganzen Lauf nach, statt ihn zu
-// verlieren. Ein Lauf gleichzeitig — ein zweiter Start wird abgelehnt.
+// ── Run state ───────────────────────────────────────────────────────────────
+// Held server-side: a reload replays the whole run instead of losing it. One
+// run at a time — a second start is rejected.
 const run = { id: null, url: null, dir: null, events: [], active: false, child: null };
 const clients = new Set();
 
-// ── Inspect-Ziel ────────────────────────────────────────────────────────────
-// Die Seite, ueber die der Nutzer gerade mit der Maus faehrt. Sie liegt als
-// lokalisierte Kopie auf DIESEM Server und damit same-origin zur Oberflaeche —
-// nur so kommt der Picker an ihren DOM. Ein zweiter Port waere eine andere
-// Origin und das iframe damit blind; das Original direkt einzubetten scheitert
-// bei den meisten Produktionsseiten an X-Frame-Options.
+// ── Inspect target ──────────────────────────────────────────────────────────
+// The page the user is currently hovering over. It lives as a localized copy
+// on THIS server and is therefore same-origin with the interface — only that
+// way can the picker reach its DOM. A second port would be another origin and
+// leave the iframe blind; embedding the original directly fails on most
+// production sites because of X-Frame-Options.
 //
-// Es wird bewusst NICHT die ganze Seite geholt: localize laedt nur das HTML,
-// alles andere kommt beim ersten Zugriff durch den Proxy unten nach. Selective
-// Extraction soll keinen vollstaendigen Clone erzwingen.
+// Deliberately NOT the whole page is fetched: localize loads only the HTML,
+// everything else follows on first access through the proxy below. Selective
+// extraction should not force a complete clone.
 const site = { url: null, origin: null, dir: null, slug: null };
 
 const push = e => {
@@ -66,13 +66,12 @@ const webPath = p => {
   return a.startsWith(ROOT + sep) ? '/' + a.slice(ROOT.length + 1).split(sep).join('/') : p;
 };
 
-// Einen wirklich freien Port suchen, statt 4173 anzunehmen. Ein fremder
-// parity serve auf demselben Port laesst unseren still scheitern — und dann
-// misst verify die fremde Seite und meldet sie als Clone. Falsches Ergebnis
-// ist schlimmer als gar keins.
-// Geprueft wird durch Verbinden, nicht durch Binden: Windows laesst ein
-// listen auf 127.0.0.1 zu, waehrend ein fremder Server schon auf 0.0.0.0
-// liegt — der Port sieht dann frei aus und ist es nicht.
+// Look for a truly free port instead of assuming 4173. Another parity serve on
+// the same port makes ours fail silently — and then verify measures the other
+// page and reports it as the clone. A wrong result is worse than none.
+// Checked by connecting, not by binding: Windows allows a listen on 127.0.0.1
+// while another server already sits on 0.0.0.0 — the port then looks free and
+// is not.
 const freePort = (from = CLONE_PORT) => new Promise(res => {
   const c = connect({ port: from, host: '127.0.0.1' });
   const free = () => { c.destroy(); res(from); };
@@ -93,8 +92,8 @@ const startCloneServer = async dir => {
   return port;
 };
 
-// Ein CLI-Befehl. Loest auf, wenn der Prozess endet — nie mit reject, der
-// Exit-Code gehoert zum Ergebnis (diff endet absichtlich mit 1).
+// One CLI command. Resolves when the process ends — never with reject, the
+// exit code is part of the result (diff exits with 1 on purpose).
 const cli = (cmd, args) => new Promise(res => {
   push({ ev: 'cmd', name: cmd, args, status: 'start' });
   const child = spawn(process.execPath, [join(ROOT, 'bin/parity.mjs'), cmd, ...args, '--json'],
@@ -109,8 +108,8 @@ const cli = (cmd, args) => new Promise(res => {
       if (!l.trim()) continue;
       try {
         const o = JSON.parse(l);
-        // Die Tools schreiben absolute Pfade. Der Client bekommt URLs unter der
-        // Repo-Wurzel — er kann sie laden, und nichts leakt ausserhalb.
+        // The tools write absolute paths. The client gets URLs under the repo
+        // root — it can load them, and nothing leaks outside.
         for (const k of ['path', 'out']) if (o[k]) o[k] = webPath(o[k]);
         push({ ...o, cmd });
       } catch { push({ ev: 'log', cmd, line: l.slice(0, 500) }); }
@@ -146,7 +145,7 @@ const pipeline = async url => {
   await cli('capture', [url, base]);
   await cli('localize', [url, clone]);
 
-  // Runde 1: statische Discovery durch HTML/CSS/JS.
+  // Round 1: static discovery through HTML/CSS/JS.
   const seeds = [join(clone, 'index.html')];
   if (existsSync(join(base, 'resources.txt'))) seeds.push(join(base, 'resources.txt'));
   push({ ev: 'loop', round: 1, status: 'start' });
@@ -160,8 +159,8 @@ const pipeline = async url => {
   await cli('verify', [url, src, '--shots']);
   await cli('verify', [cloneUrl, cl, '--shots']);
 
-  // Runde 2: was erst zur Laufzeit angefragt wurde, steht jetzt in missing.txt.
-  // Nur nachladen, wenn wirklich etwas fehlt — sonst ein zweiter Verify umsonst.
+  // Round 2: whatever was only requested at runtime is now in missing.txt.
+  // Only fetch again if something really is missing — otherwise a second verify for nothing.
   const readMissing = () => existsSync(join(cl, 'missing.txt'))
     ? readFileSync(join(cl, 'missing.txt'), 'utf8').split('\n').filter(Boolean) : [];
   const missing = readMissing();
@@ -184,7 +183,7 @@ const pipeline = async url => {
 
 // ── HTTP ────────────────────────────────────────────────────────────────────
 const sendFile = (res, base, rel) => {
-  // Trust boundary: nur Dateien unterhalb von base ausliefern.
+  // Trust boundary: only serve files below base.
   const p = resolve(base, '.' + rel.replace(/\\/g, '/'));
   if (!p.startsWith(resolve(base) + sep) && p !== resolve(base)) { res.writeHead(403); return res.end('403'); }
   if (!existsSync(p) || statSync(p).isDirectory()) { res.writeHead(404); return res.end('404'); }
@@ -202,7 +201,7 @@ const server = createServer(async (req, res) => {
   if (path === '/api/events') {
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
     res.write('retry: 2000\n\n');
-    for (const e of run.events) res.write('data: ' + JSON.stringify(e) + '\n\n');   // Reload spielt nach
+    for (const e of run.events) res.write('data: ' + JSON.stringify(e) + '\n\n');   // a reload replays
     if (!run.active) res.write('data: ' + JSON.stringify({ ev: 'idle' }) + '\n\n');
     clients.add(res);
     const ping = setInterval(() => res.write(': ping\n\n'), 25000);
@@ -214,8 +213,8 @@ const server = createServer(async (req, res) => {
     let body = ''; for await (const c of req) body += c;
     let url;
     try { url = new URL(JSON.parse(body).url).href; }
-    catch { res.writeHead(400, { 'content-type': 'application/json' }); return res.end('{"err":"ungueltige URL"}'); }
-    if (run.active) { res.writeHead(409, { 'content-type': 'application/json' }); return res.end('{"err":"Ein Lauf laeuft bereits"}'); }
+    catch { res.writeHead(400, { 'content-type': 'application/json' }); return res.end('{"err":"invalid URL"}'); }
+    if (run.active) { res.writeHead(409, { 'content-type': 'application/json' }); return res.end('{"err":"A run is already in progress"}'); }
     run.active = true; run.events = [];
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ ok: true, url }));
@@ -225,14 +224,14 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  // Evidenz-Modus: der diff-Lauf gegen die mitgelieferten Referenzpaare.
-  // Braucht kein Playwright und keine drei Minuten — zum Entwickeln und Zeigen.
+  // Evidence mode: the diff run against the bundled reference pairs.
+  // Needs no Playwright and no three minutes — for developing and showing.
   if (path === '/api/demo' && req.method === 'POST') {
     let body = ''; for await (const c of req) body += c;
     const t = (JSON.parse(body || '{}').target || '').replace(/[^a-z0-9.-]/gi, '');
     const dir = join(ROOT, 'evidence', t);
-    if (!t || !existsSync(dir)) { res.writeHead(404, { 'content-type': 'application/json' }); return res.end('{"err":"unbekanntes Ziel"}'); }
-    if (run.active) { res.writeHead(409, { 'content-type': 'application/json' }); return res.end('{"err":"Ein Lauf laeuft bereits"}'); }
+    if (!t || !existsSync(dir)) { res.writeHead(404, { 'content-type': 'application/json' }); return res.end('{"err":"unknown target"}'); }
+    if (run.active) { res.writeHead(409, { 'content-type': 'application/json' }); return res.end('{"err":"A run is already in progress"}'); }
     run.active = true; run.events = []; run.url = t; run.dir = dir;
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end('{"ok":true}');
@@ -259,14 +258,14 @@ const server = createServer(async (req, res) => {
 
   // ── Selective Extraction ──────────────────────────────────────────────────
 
-  // Ziel oeffnen: nur das HTML holen (localize), nicht die ganze Seite. Die
-  // Assets kommen beim ersten Zugriff durch den Proxy weiter unten.
+  // Open a target: fetch only the HTML (localize), not the whole page. The
+  // assets follow on first access through the proxy further down.
   if (path === '/api/inspect' && req.method === 'POST') {
     let body = ''; for await (const c of req) body += c;
     let url;
     try { url = new URL(JSON.parse(body).url).href; }
-    catch { res.writeHead(400, { 'content-type': 'application/json' }); return res.end('{"err":"ungueltige URL"}'); }
-    if (run.active) { res.writeHead(409, { 'content-type': 'application/json' }); return res.end('{"err":"Ein Lauf laeuft bereits"}'); }
+    catch { res.writeHead(400, { 'content-type': 'application/json' }); return res.end('{"err":"invalid URL"}'); }
+    if (run.active) { res.writeHead(409, { 'content-type': 'application/json' }); return res.end('{"err":"A run is already in progress"}'); }
 
     const slug = slugOf(url);
     const dir = join(RUNS, slug, 'site');
@@ -285,14 +284,14 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  // Ein Ziel messen. Laeuft gegen die ORIGINAL-URL, nicht gegen die Kopie —
-  // gemessen wird die echte Runtime, ausgewaehlt wurde nur auf der Kopie.
+  // Measure a target. Runs against the ORIGINAL URL, not the copy — the real
+  // runtime is measured; the copy was only used for picking.
   if (path === '/api/extract' && req.method === 'POST') {
     let body = ''; for await (const c of req) body += c;
     let o;
-    try { o = JSON.parse(body); new URL(o.url); } catch { res.writeHead(400, { 'content-type': 'application/json' }); return res.end('{"err":"ungueltige Anfrage"}'); }
-    if (!o.selector) { res.writeHead(400, { 'content-type': 'application/json' }); return res.end('{"err":"kein Selector"}'); }
-    if (run.active) { res.writeHead(409, { 'content-type': 'application/json' }); return res.end('{"err":"Ein Lauf laeuft bereits"}'); }
+    try { o = JSON.parse(body); new URL(o.url); } catch { res.writeHead(400, { 'content-type': 'application/json' }); return res.end('{"err":"invalid request"}'); }
+    if (!o.selector) { res.writeHead(400, { 'content-type': 'application/json' }); return res.end('{"err":"no selector"}'); }
+    if (run.active) { res.writeHead(409, { 'content-type': 'application/json' }); return res.end('{"err":"A run is already in progress"}'); }
 
     const slug = (o.title || o.selector).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'element';
     const out = join('extractions', slug);
@@ -307,9 +306,9 @@ const server = createServer(async (req, res) => {
     res.end(JSON.stringify({ ok: true, slug, out: '/' + out.split(sep).join('/') }));
 
     push({ ev: 'extract', status: 'start', url: o.url, selector: o.selector, slug, out: '/' + out.split(sep).join('/') });
-    // Messen, dann daraus die eigene Fassung schreiben. rebuild bleibt ein
-    // eigener Befehl — es liest nur metadata.json und laesst sich deshalb
-    // wiederholen, ohne noch einmal zu messen.
+    // Measure, then write the independent version from it. rebuild stays its
+    // own command — it only reads metadata.json and can therefore be repeated
+    // without measuring again.
     cli('extract', args)
       .then(async exit => {
         if (exit === 0) {
@@ -322,7 +321,7 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  // Was schon extrahiert wurde — fuer die Kandidatenliste in der UI.
+  // What has already been extracted — for the candidate list in the UI.
   if (path === '/api/extractions') {
     const list = [];
     if (existsSync(EXTRACTIONS)) {
@@ -334,11 +333,11 @@ const server = createServer(async (req, res) => {
           list.push({ slug: name, title: m.title, category: m.category, triggers: m.triggers,
                       isolatability: m.isolatability, confidence: m.confidence, status: m.status,
                       source: m.source, createdAt: m.createdAt, warnings: (m.warnings || []).length,
-                      // Vorschaubild und Exporte, damit der Results-Bereich mehr
-                      // als eine Textzeile pro Ergebnis zeigen kann.
+                      // Preview image and exports, so the results area can show
+                      // more than one line of text per result.
                       previews: m.previews ?? {}, code: m.code ?? {},
                       duration: m.timing?.durationMs ?? null, techniques: m.techniques ?? [] });
-        } catch { /* halb geschriebene Datei — beim naechsten Mal wieder */ }
+        } catch { /* half-written file — try again next time */ }
       }
     }
     list.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
@@ -354,26 +353,26 @@ const server = createServer(async (req, res) => {
   if (path === '/')                      return sendFile(res, UI, '/index.html');
   if (path === '/__site' || path === '/__site/') return serveSite(res, '/index.html', u.search);
 
-  // Alles Uebrige gehoert der inspizierten Seite. localize biegt ihre absoluten
-  // Origin-URLs auf wurzelrelativ um, also landen ihre Assets genau hier — und
-  // deshalb liegen die eigenen Dateien der Oberflaeche unter /__parity/.
+  // Everything else belongs to the inspected page. localize rewrites its
+  // absolute origin URLs to root-relative, so its assets land right here — and
+  // that is why the interface's own files live under /__parity/.
   if (site.dir) return serveSite(res, path, u.search);
   res.writeHead(404); res.end('404');
 });
 
-// ── Die inspizierte Seite ausliefern ────────────────────────────────────────
-// Lokal, wenn schon da. Sonst einmal vom Ursprung holen und ablegen. So muss
-// vorher nichts vollstaendig heruntergeladen werden, und was einmal geholt
-// wurde, kostet beim zweiten Mal nichts.
+// ── Serve the inspected page ────────────────────────────────────────────────
+// Locally if already there. Otherwise fetch it once from the origin and store
+// it. That way nothing has to be downloaded completely beforehand, and what
+// was fetched once costs nothing the second time.
 const serveSite = async (res, rel, search = '') => {
-  if (!site.dir) { res.writeHead(503); return res.end('kein Inspect-Ziel geoeffnet'); }
+  if (!site.dir) { res.writeHead(503); return res.end('no inspect target open'); }
   const clean = rel.split('?')[0];
   const p = resolve(site.dir, '.' + clean);
   if (!p.startsWith(resolve(site.dir) + sep) && p !== resolve(site.dir)) { res.writeHead(403); return res.end('403'); }
 
   if (existsSync(p) && statSync(p).isFile()) return sendFile(res, site.dir, clean);
 
-  // Nicht da — beim Ursprung nachfragen.
+  // Not there — ask the origin.
   let upstream;
   try {
     upstream = await fetch(site.origin + clean + search, { headers: { 'user-agent': UA, referer: site.url } });
@@ -385,29 +384,29 @@ const serveSite = async (res, rel, search = '') => {
 
   const buf = Buffer.from(await upstream.arrayBuffer());
   const type = upstream.headers.get('content-type') || typeOf(clean);
-  // Nur ablegen, wenn der Pfad ohne Query eindeutig ist — sonst ueberschreiben
-  // sich zwei Varianten derselben Datei gegenseitig.
+  // Only store when the path is unambiguous without a query — otherwise two
+  // variants of the same file overwrite each other.
   if (!search) {
-    try { mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, buf); } catch { /* Cache ist Kuer */ }
+    try { mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, buf); } catch { /* the cache is optional */ }
   }
   push({ ev: 'asset', cmd: 'proxy', path: clean, status: upstream.status, bytes: buf.length });
   res.writeHead(200, { 'content-type': type, 'content-length': buf.length, 'cache-control': 'no-cache' });
   res.end(buf);
 };
 
-// ── Verknuepfung ────────────────────────────────────────────────────────────
-// Startmenue-Eintrag mit der Marke als Icon. Ziel ist node.exe direkt statt der
-// .cmd, damit kein Konsolenfenster im Vordergrund steht — minimiert laeuft es
-// mit, sichtbar genug zum Beenden.
+// ── Shortcut ────────────────────────────────────────────────────────────────
+// Start menu entry with the brand mark as icon. Target is node.exe directly
+// rather than the .cmd, so no console window sits in the foreground — it runs
+// along minimised, visible enough to quit.
 if (process.argv.includes('--install')) {
   if (process.platform !== 'win32') {
-    console.error('--install gibt es bisher nur unter Windows.');
+    console.error('--install is only available on Windows so far.');
     process.exit(1);
   }
   const lnk = join(process.env.APPDATA, 'Microsoft/Windows/Start Menu/Programs/parity.lnk');
-  // In PowerShell einfach zitieren: dort sind Backslashes literal. Und ueber
-  // eine Datei mit BOM statt -Command, sonst zerlegt die Konsolen-Codepage
-  // Umlaute im Pfad — dieses Repo liegt unter "pläne".
+  // Single-quote in PowerShell: backslashes are literal there. And go through
+  // a file with BOM instead of -Command, otherwise the console code page
+  // mangles umlauts in the path — this repo lives under "pläne".
   const q = s => "'" + s.replace(/'/g, "''") + "'";
   const ps = [
     '$s = (New-Object -ComObject WScript.Shell).CreateShortcut(' + q(lnk) + ')',
@@ -423,20 +422,20 @@ if (process.argv.includes('--install')) {
   writeFileSync(script, '﻿' + ps, 'utf8');
   const r = spawnSync('powershell', ['-NoProfile', '-NonInteractive', '-File', script], { encoding: 'utf8' });
   rmSync(script, { force: true });
-  if (r.status !== 0) { console.error(r.stderr || 'Verknuepfung fehlgeschlagen'); process.exit(1); }
-  console.log('✓ Startmenue: parity');
+  if (r.status !== 0) { console.error(r.stderr || 'Creating the shortcut failed'); process.exit(1); }
+  console.log('✓ Start menu: parity');
   console.log('  ' + lnk);
-  console.log('  Zum Anheften: im Startmenue rechtsklicken → An Taskleiste anheften');
+  console.log('  To pin it: right-click in the Start menu → Pin to taskbar');
   process.exit(0);
 }
 
-// Zweiter Klick auf die Verknuepfung, waehrend schon eine Instanz laeuft: das
-// ist kein Fehler, sondern der Normalfall bei einer App. Fenster auf die
-// laufende Instanz oeffnen statt mit einem Stacktrace in einem minimierten
-// Konsolenfenster zu sterben, das niemand sieht.
+// A second click on the shortcut while an instance is already running is not
+// an error but the normal case for an app. Open a window on the running
+// instance instead of dying with a stack trace in a minimised console window
+// nobody sees.
 server.on('error', e => {
   if (e.code !== 'EADDRINUSE') throw e;
-  console.log('parity laeuft bereits auf ' + PORT);
+  console.log('parity is already running on ' + PORT);
   if (NO_WINDOW) process.exit(1);
   openWindow('http://localhost:' + PORT + '/');
 });
@@ -447,11 +446,11 @@ server.listen(PORT, HOST, () => {
   if (!NO_WINDOW) openWindow(url);
 });
 
-// ── App-Fenster ─────────────────────────────────────────────────────────────
-// Chrome/Edge im App-Modus: eigenes Fenster ohne Adressleiste, eigener
-// Taskleisten-Eintrag. Kein Framework, kein Paket — nur ein Startflag.
-// Eigenes Profilverzeichnis ist Pflicht: sonst reicht der neue Prozess das
-// Fenster an eine laufende Browser-Instanz weiter und endet sofort.
+// ── App window ──────────────────────────────────────────────────────────────
+// Chrome/Edge in app mode: its own window without address bar, its own
+// taskbar entry. No framework, no package — just a launch flag.
+// A separate profile directory is mandatory: otherwise the new process hands
+// the window to a running browser instance and exits immediately.
 function openWindow(url) {
   const L = process.env.LOCALAPPDATA || '';
   const PF = process.env.ProgramFiles || 'C:\\Program Files';
@@ -466,15 +465,15 @@ function openWindow(url) {
     '/usr/bin/google-chrome', '/usr/bin/chromium',
   ];
   const bin = candidates.find(p => existsSync(p));
-  if (!bin) return console.log('  (kein Chrome/Edge gefunden — im Browser oeffnen)');
+  if (!bin) return console.log('  (no Chrome/Edge found — open it in a browser)');
 
   const profile = join(RUNS, '.window-profile');
   mkdirSync(profile, { recursive: true });
   const win = spawn(bin, ['--app=' + url, '--user-data-dir=' + profile,
     '--window-size=1600,1000', '--no-first-run', '--no-default-browser-check'], { stdio: 'ignore' });
-  // Fenster zu = Programm beendet. Sonst bliebe ein Node-Prozess liegen.
+  // Window closed = program ends. Otherwise a Node process would be left behind.
   win.on('exit', () => { cloneServer?.kill(); run.child?.kill(); process.exit(0); });
-  win.on('error', () => console.log('  (Fenster konnte nicht geoeffnet werden — im Browser oeffnen)'));
+  win.on('error', () => console.log('  (window could not be opened — open it in a browser)'));
 }
 
 process.on('SIGINT', () => { cloneServer?.kill(); run.child?.kill(); process.exit(0); });
