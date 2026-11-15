@@ -23,7 +23,9 @@ const HOST = flag('--host') ?? '127.0.0.1';
 
 
 createServer((req, res) => {
-  const url = decodeURIComponent(req.url.split('?')[0]);
+  let url;
+  try { url = decodeURIComponent(req.url.split('?')[0]); }
+  catch { res.writeHead(400); return res.end('400 bad path'); }
   let p = join(ROOT, normalize(url).replace(/^(\.\.[/\\])+/, ''));
   try {
     if (statSync(p).isDirectory()) p = join(p, 'index.html');
@@ -37,9 +39,15 @@ createServer((req, res) => {
 
   const type = MIME[extname(p).toLowerCase()] || 'application/octet-stream';
   const range = req.headers.range; // videos need 206 or Chrome stalls
-  if (range && /^bytes=/.test(range)) {
-    const [s, e] = range.replace('bytes=', '').split('-');
-    const start = Number(s), end = e ? Number(e) : size - 1;
+  const m = range && /^bytes=(\d*)-(\d*)$/.exec(range);
+  if (m && (m[1] || m[2])) {
+    // "bytes=-500" means the LAST 500 bytes, not bytes 0–500.
+    let start = m[1] ? Number(m[1]) : Math.max(0, size - Number(m[2]));
+    let end = m[1] && m[2] ? Math.min(Number(m[2]), size - 1) : size - 1;
+    if (start > end || start >= size) {
+      res.writeHead(416, { 'content-range': `bytes */${size}` });
+      return res.end();
+    }
     res.writeHead(206, {
       'content-type': type, 'accept-ranges': 'bytes',
       'content-range': `bytes ${start}-${end}/${size}`, 'content-length': end - start + 1,

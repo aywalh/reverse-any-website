@@ -119,8 +119,9 @@ const cli = (cmd, args) => new Promise(res => {
     .forEach(l => push({ ev: 'stderr', cmd, line: l.slice(0, 500) })));
   child.on('exit', code => {
     run.child = null;
-    push({ ev: 'cmd', name: cmd, status: 'end', exit: code ?? 0 });
-    res(code ?? 0);
+    // null = killed by a signal (always the case for kill() on Windows): not a success.
+    push({ ev: 'cmd', name: cmd, status: 'end', exit: code ?? 1 });
+    res(code ?? 1);
   });
   child.on('error', e => { push({ ev: 'stderr', cmd, line: String(e) }); res(1); });
 });
@@ -139,25 +140,32 @@ const pipeline = async url => {
   const base = join(dir, 'capture/baseline');
   const origin = new URL(url).origin;
   run.dir = dir; run.url = url; run.id = String(Date.now());
+  // Reports from an earlier run would let diff score an old clone against a new
+  // source when a verify fails this time. The downloaded clone stays as a cache.
+  rmSync(join(dir, 'capture'), { recursive: true, force: true });
   mkdirSync(dir, { recursive: true });
+  const step = async (cmd, args) => {
+    if (run.stopped) throw new Error('stopped');
+    return cli(cmd, args);
+  };
   push({ ev: 'run', status: 'start', url, dir: dir.slice(ROOT.length + 1).split(sep).join('/'), id: run.id });
 
-  await cli('capture', [url, base]);
-  await cli('localize', [url, clone]);
+  await step('capture', [url, base]);
+  await step('localize', [url, clone]);
 
   // Round 1: static discovery through HTML/CSS/JS.
   const seeds = [join(clone, 'index.html')];
   if (existsSync(join(base, 'resources.txt'))) seeds.push(join(base, 'resources.txt'));
   push({ ev: 'loop', round: 1, status: 'start' });
-  await cli('fetch', [origin, clone, ...seeds]);
+  await step('fetch', [origin, clone, ...seeds]);
 
   const port = await startCloneServer(clone);
   const cloneUrl = 'http://localhost:' + port + '/';
   run.clonePort = port;
   await new Promise(r => setTimeout(r, 600));
 
-  await cli('verify', [url, src, '--shots']);
-  await cli('verify', [cloneUrl, cl, '--shots']);
+  await step('verify', [url, src, '--shots']);
+  await step('verify', [cloneUrl, cl, '--shots']);
 
   // Round 2: whatever was only requested at runtime is now in missing.txt.
   // Only fetch again if something really is missing — otherwise a second verify for nothing.
@@ -167,17 +175,17 @@ const pipeline = async url => {
   push({ ev: 'loop', round: 1, status: 'end', missing: missing.length });
   if (missing.length) {
     push({ ev: 'loop', round: 2, status: 'start' });
-    await cli('fetch', [origin, clone, join(cl, 'missing.txt')]);
-    await cli('verify', [cloneUrl, cl, '--shots']);
+    await step('fetch', [origin, clone, join(cl, 'missing.txt')]);
+    await step('verify', [cloneUrl, cl, '--shots']);
     push({ ev: 'loop', round: 2, status: 'end', missing: readMissing().length });
   }
 
-  await cli('interact', [url, src]);
-  await cli('interact', [cloneUrl, cl]);
-  await cli('responsive', [url, src]);
-  await cli('responsive', [cloneUrl, cl]);
+  await step('interact', [url, src]);
+  await step('interact', [cloneUrl, cl]);
+  await step('responsive', [url, src]);
+  await step('responsive', [cloneUrl, cl]);
 
-  const exit = await cli('diff', [src, cl]);
+  const exit = await step('diff', [src, cl]);
   push({ ev: 'run', status: 'end', exit });
 };
 
@@ -194,9 +202,25 @@ const sendFile = (res, base, rel) => {
   createReadStream(p).pipe(res);
 };
 
-const server = createServer(async (req, res) => {
+// Any page in any browser tab can POST to 127.0.0.1 without a preflight. Only
+// the interface itself may start, stop or replay a run.
+const OWN_ORIGINS = new Set([`http://localhost:${PORT}`, `http://127.0.0.1:${PORT}`]);
+
+const server = createServer((req, res) => handle(req, res).catch(e => {
+  // One bad request must not take the whole interface down.
+  if (!res.headersSent) res.writeHead(400, { 'content-type': 'application/json' });
+  res.end(JSON.stringify({ err: String(e?.message ?? e).slice(0, 200) }));
+}));
+
+const handle = async (req, res) => {
   const u = new URL(req.url, 'http://x');
-  const path = decodeURIComponent(u.pathname);
+  const path = decodeURIComponent(u.pathname);   // URIError lands in the catch above
+
+  if (req.method === 'POST' && path.startsWith('/api/')
+      && req.headers.origin && !OWN_ORIGINS.has(req.headers.origin)) {
+    res.writeHead(403, { 'content-type': 'application/json' });
+    return res.end('{"err":"foreign origin"}');
+  }
 
   if (path === '/api/events') {
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
@@ -215,7 +239,7 @@ const server = createServer(async (req, res) => {
     try { url = new URL(JSON.parse(body).url).href; }
     catch { res.writeHead(400, { 'content-type': 'application/json' }); return res.end('{"err":"invalid URL"}'); }
     if (run.active) { res.writeHead(409, { 'content-type': 'application/json' }); return res.end('{"err":"A run is already in progress"}'); }
-    run.active = true; run.events = [];
+    run.active = true; run.stopped = false; run.events = [];
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ ok: true, url }));
     pipeline(url)
@@ -232,7 +256,7 @@ const server = createServer(async (req, res) => {
     const dir = join(ROOT, 'evidence', t);
     if (!t || !existsSync(dir)) { res.writeHead(404, { 'content-type': 'application/json' }); return res.end('{"err":"unknown target"}'); }
     if (run.active) { res.writeHead(409, { 'content-type': 'application/json' }); return res.end('{"err":"A run is already in progress"}'); }
-    run.active = true; run.events = []; run.url = t; run.dir = dir;
+    run.active = true; run.stopped = false; run.events = []; run.url = t; run.dir = dir;
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end('{"ok":true}');
     push({ ev: 'run', status: 'start', url: t, dir: 'evidence/' + t, demo: true });
@@ -243,6 +267,7 @@ const server = createServer(async (req, res) => {
   }
 
   if (path === '/api/stop' && req.method === 'POST') {
+    run.stopped = true;   // pipeline() checks this between steps
     run.child?.kill();
     res.writeHead(200, { 'content-type': 'application/json' });
     return res.end('{"ok":true}');
@@ -269,7 +294,7 @@ const server = createServer(async (req, res) => {
 
     const slug = slugOf(url);
     const dir = join(RUNS, slug, 'site');
-    run.active = true; run.events = [];
+    run.active = true; run.stopped = false; run.events = [];
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ ok: true, url, slug, frame: '/__site/' }));
 
@@ -301,7 +326,7 @@ const server = createServer(async (req, res) => {
     if (o.title) args.push('--title', o.title);
     if (o.repeat) args.push('--repeat', String(Number(o.repeat) || 3));
 
-    run.active = true; run.events = [];
+    run.active = true; run.stopped = false; run.events = [];
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ ok: true, slug, out: '/' + out.split(sep).join('/') }));
 
@@ -358,7 +383,7 @@ const server = createServer(async (req, res) => {
   // that is why the interface's own files live under /__parity/.
   if (site.dir) return serveSite(res, path, u.search);
   res.writeHead(404); res.end('404');
-});
+};
 
 // ── Serve the inspected page ────────────────────────────────────────────────
 // Locally if already there. Otherwise fetch it once from the origin and store

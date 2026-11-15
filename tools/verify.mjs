@@ -146,4 +146,10 @@ const run = async () => {
   if (errors.length) console.log('  ERR:', [...new Set(errors)].slice(0, 8).join('\n       '));
   await browser.close();
 };
-run();
+run().catch(e => {
+  // A dead URL or a timeout: say so, tell the UI the step ended, exit non-zero.
+  // process.exit also takes the Playwright browser down with it.
+  console.error('✗ ' + (e?.message ?? e));
+  emit({ ev: 'done', cmd: 'verify', ok: false, err: String(e?.message ?? e).slice(0, 300), exit: 1 });
+  process.exit(1);
+});

@@ -83,4 +83,5 @@ Selective extraction — one element instead of the whole page:
 }
 
 const child = spawn(process.execPath, [join(ROOT, COMMANDS[cmd][0]), ...rest], { stdio: 'inherit' });
-child.on('exit', code => process.exit(code ?? 0));
+// null = killed by a signal: never report that as success.
+child.on('exit', code => process.exit(code ?? 1));

@@ -142,6 +142,16 @@ if (ra_ && rb_) {
          match: !respBad.length, detail: respBad });
 }
 
+// ── a report on one side only ─────────────────────────────────────────────
+// Usually the clone-side run crashed before writing. Skipping it silently would
+// declare parity on whatever subset happened to survive.
+for (const [file, a, b] of [['VERIFY.json', va, vb], ['INTERACTIONS.json', ia, ib], ['RESPONSIVE.json', ra_, rb_]]) {
+  if (!a === !b) continue;
+  checked++; mismatches++;
+  rows.push({ label: file, a: a ? 'present' : 'missing', b: b ? 'present' : 'missing', same: false });
+  emit({ ev: 'row', kind: 'diff', label: file, source: a ? 'present' : 'missing', clone: b ? 'present' : 'missing', match: false });
+}
+
 // ── output ────────────────────────────────────────────────────────────────
 if (!rows.length) {
   console.error(`No comparable reports found in ${A} and ${B}.`);

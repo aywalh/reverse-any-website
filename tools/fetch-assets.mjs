@@ -6,7 +6,7 @@
 //
 // Seed files may be an HTML/CSS/JS document to scan, or a newline-separated URL list.
 import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { emit, family } from './_emit.mjs';
 
 const [, , originArg, outArg, ...seeds] = process.argv;
@@ -16,6 +16,7 @@ if (!originArg || !outArg) {
 }
 const ORIGIN = originArg.replace(/\/+$/, '');
 const OUT = outArg;
+const OUT_ABS = resolve(OUT);
 const HOST = new URL(ORIGIN).host;
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36';
 
@@ -105,7 +106,9 @@ while (queue.size) {
   // A URL path is percent-encoded, a filesystem path is not — and serve() decodes
   // the incoming request. Store under the encoded name and every asset with a
   // space in it 404s locally while returning 200 from the origin.
-  const dest = join(OUT, decodePath(p));
+  const dest = resolve(OUT, '.' + decodePath(p));
+  // A crawled "/../../x.js" must never land outside the clone directory.
+  if (!dest.startsWith(OUT_ABS + sep)) { failed.push({ path: p, err: 'outside outDir' }); continue; }
   if (existsSync(dest) && statSync(dest).size > 0) {
     if (TEXT_EXT.test(p)) harvest(readFileSync(dest, 'utf8'), p);
     // Report cache hits too — otherwise a second round looks empty.
@@ -118,8 +121,9 @@ while (queue.size) {
     emit({ ev: 'asset', path: p, family: family(p), status: r.status, err: r.err });
     continue;
   }
-  mkdirSync(dirname(dest), { recursive: true });
-  writeFileSync(dest, r.buf);
+  // A decoded ':' '*' '|' etc. is not a legal Windows file name — skip it, keep crawling.
+  try { mkdirSync(dirname(dest), { recursive: true }); writeFileSync(dest, r.buf); }
+  catch (e) { failed.push({ path: p, err: String(e) }); continue; }
   n++;
   emit({ ev: 'asset', path: p, family: family(p), bytes: r.buf.length });
   if (TEXT_EXT.test(p) || /text|javascript|json/.test(r.ct)) harvest(r.buf.toString('utf8'), p);

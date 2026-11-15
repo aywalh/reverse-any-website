@@ -70,7 +70,7 @@ const target = new URL(URL_);
 const bare = target.host.replace(/^www\./, '');
 let rewritten = 0;
 for (const host of new Set([target.host, bare, 'www.' + bare])) {
-  for (const prefix of [`https://${host}`, `http://${host}`, `https:\/\/${host}`, `http:\/\/${host}`, `//${host}`]) {
+  for (const prefix of [`https://${host}`, `http://${host}`, `https:\\/\\/${host}`, `http:\\/\\/${host}`, `//${host}`]) {
     let i = 0;
     while ((i = html.indexOf(prefix, i)) !== -1) {
       const after = html[i + prefix.length];
@@ -166,7 +166,8 @@ const guard = `// parity guard — keeps this local clone from reaching the orig
 
   var of = window.fetch;
   window.fetch = function (input) {
-    var u = typeof input === 'string' ? input : (input && input.url) || '';
+    // A Request carries .url; a URL object and a string both stringify to the address.
+    var u = (typeof Request !== 'undefined' && input instanceof Request) ? input.url : (input ? String(input) : '');
     if (u && !allowed(u)) {
       block('fetch', u);
       // A clean network failure is honest and every library handles it. Fake JSON
@@ -194,10 +195,36 @@ const guard = `// parity guard — keeps this local clone from reaching the orig
   };
 
   // A form posting off-origin would submit real data on someone's behalf.
+  // A button's formaction overrides the form's action.
   document.addEventListener('submit', function (e) {
-    var a = e.target && e.target.getAttribute('action');
+    var a = (e.submitter && e.submitter.getAttribute('formaction')) || (e.target && e.target.getAttribute('action'));
     if (a && !allowed(a)) { e.preventDefault(); block('form submit', a); }
   }, true);
+  // form.submit() fires no submit event, so it needs its own gate.
+  var fs = HTMLFormElement.prototype.submit;
+  HTMLFormElement.prototype.submit = function () {
+    var a = this.getAttribute('action');
+    if (a && !allowed(a)) { block('form submit', a); return; }
+    return fs.apply(this, arguments);
+  };
+
+  // Live channels: an off-origin socket or event stream is a live connection to
+  // the original's backend. Refuse it the way the network would.
+  ['WebSocket', 'EventSource'].forEach(function (name) {
+    var Orig = window[name];
+    if (!Orig) return;
+    var Gated = function (url) {
+      if (!allowed(String(url).replace(/^ws/i, 'http'))) {
+        block(name, url);
+        throw new DOMException('parity: off-origin ' + name + ' blocked', 'SecurityError');
+      }
+      return Reflect.construct(Orig, arguments, new.target || Gated);
+    };
+    Gated.prototype = Orig.prototype;
+    Object.keys(Orig).forEach(function (k) { try { Gated[k] = Orig[k]; } catch (e) {} });
+    ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'].forEach(function (k) { if (k in Orig) Gated[k] = Orig[k]; });
+    window[name] = Gated;
+  });
 })();
 `;
 const guardPath = join(OUT, GUARD);

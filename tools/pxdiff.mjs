@@ -13,8 +13,11 @@ import { readFileSync, existsSync } from 'node:fs';
 import { emit } from './_emit.mjs';
 
 const [, , A, B] = process.argv;
-const TOL = Number(process.argv.find(a => a.startsWith('--tolerance='))?.split('=')[1] ?? 8);
-if (!A || !B) { console.error('usage: node tools/pxdiff.mjs <a.png> <b.png> [--tolerance=n]'); process.exit(2); }
+// Both spellings: --tolerance=2 and --tolerance 2 (the one the header documents).
+const ti = process.argv.indexOf('--tolerance');
+const TOL = Number(process.argv.find(a => a.startsWith('--tolerance='))?.split('=')[1] ?? (ti > -1 ? process.argv[ti + 1] : 8));
+if (!A || !B) { console.error('usage: node tools/pxdiff.mjs <a.png> <b.png> [--tolerance n]'); process.exit(2); }
+if (!Number.isFinite(TOL) || TOL < 0) { console.error('--tolerance must be a number ≥ 0'); process.exit(2); }
 for (const f of [A, B]) if (!existsSync(f)) { console.error(`not found: ${f}`); process.exit(2); }
 
 const url = f => 'data:image/png;base64,' + readFileSync(f).toString('base64');
